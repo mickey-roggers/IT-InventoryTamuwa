@@ -1,7 +1,8 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
-    "builder": "RAILPACK"
+    "builder": "RAILPACK",
+    "buildCommand": "python manage.py collectstatic --noinput"
   },
   "deploy": {
     "runtime": "V2",
@@ -9,6 +10,14 @@
     "sleepApplication": false,
     "useLegacyStacker": false,
     "ipv6EgressEnabled": false,
+    "preDeployCommand": [
+      "python manage.py migrate --noinput",
+      "python manage.py ensure_superuser",
+      "python manage.py init_defaults"
+    ],
+    "startCommand": "gunicorn inventory_system.wsgi:application --bind 0.0.0.0:$PORT --access-logfile - --error-logfile -",
+    "healthcheckPath": "/health/",
+    "healthcheckTimeout": 300,
     "multiRegionConfig": {
       "us-west2": {
         "numReplicas": 1
