@@ -11,9 +11,7 @@
     "useLegacyStacker": false,
     "ipv6EgressEnabled": false,
     "preDeployCommand": [
-      "python manage.py migrate --noinput",
-      "python manage.py ensure_superuser",
-      "python manage.py init_defaults"
+      "python manage.py migrate --noinput && python manage.py ensure_superuser && python manage.py init_defaults"
     ],
     "startCommand": "gunicorn inventory_system.wsgi:application --bind 0.0.0.0:$PORT --access-logfile - --error-logfile -",
     "healthcheckPath": "/health/",
