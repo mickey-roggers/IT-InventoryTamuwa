@@ -5,13 +5,15 @@ from .models import Technician, TechnicianAssistant, TechnicianService, Technici
 class TechnicianAssistantSerializer(serializers.ModelSerializer):
     class Meta:
         model = TechnicianAssistant
-        fields = ['id', 'name', 'phone_number', 'email', 'role', 'is_active']
+        fields = ['id', 'technician', 'name', 'phone_number', 'email', 'role', 'is_active', 'created_at']
+        read_only_fields = ['created_at']
 
 
 class TechnicianServiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = TechnicianService
-        fields = ['id', 'service_name', 'description', 'typical_cost', 'estimated_duration', 'is_active']
+        fields = ['id', 'technician', 'service_name', 'description', 'typical_cost', 'is_active', 'created_at']
+        read_only_fields = ['created_at']
 
 
 class TechnicianSerializer(serializers.ModelSerializer):
@@ -30,13 +32,13 @@ class TechnicianSerializer(serializers.ModelSerializer):
 class TechnicianRecommendationSerializer(serializers.ModelSerializer):
     technician_name = serializers.CharField(source='technician.technician_name', read_only=True)
     company_name = serializers.CharField(source='technician.company_name', read_only=True)
-    asset_id = serializers.CharField(source='asset.asset_id', read_only=True)
     
     class Meta:
         model = TechnicianRecommendation
         fields = [
             'id', 'technician', 'technician_name', 'company_name',
-            'asset', 'asset_id', 'recommendation_type', 'description',
+            'category_name', 'recommendation_type', 'description',
             'estimated_cost', 'priority', 'is_completed', 'completed_date',
             'notes', 'created_at'
         ]
+        read_only_fields = ['created_at']

@@ -11,6 +11,7 @@ export default function MaintenancePage() {
   const { data: assets } = useSWR<Paginated<Asset> | Asset[]>("assets/?page_size=100", apiFetch)
   const { data: technicians } = useSWR<Paginated<Technician> | Technician[]>("technicians/?page_size=100", apiFetch)
   return <ResourcePage<MaintenanceLog> eyebrow="Service desk" title="Maintenance" description="Track faults, repairs, costs, and equipment return-to-service." endpoint="maintenance-logs/" searchPlaceholder="Search maintenance records…" emptyMessage="No maintenance work has been recorded."
+    rowHref={(item) => `/maintenance/${item.id}`}
     create={{ title: "Maintenance report", description: "Open a maintenance record for an asset.", buttonLabel: "Log maintenance", fields: [
       { name: "asset", label: "Asset", type: "select", required: true, options: unpackResults(assets).map((item) => ({ label: `${item.asset_id} · ${item.model_description}`, value: item.asset_id })) },
       { name: "date_reported", label: "Date reported", type: "date", required: true, defaultValue: new Date().toISOString().slice(0, 10) },

@@ -9,6 +9,7 @@ type AuthContextValue = {
   user: User | null
   loading: boolean
   logout: () => Promise<void>
+  refreshUser: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -17,6 +18,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+
+  async function refreshUser() {
+    const response = await fetch("/api/auth/session", { cache: "no-store" })
+    if (!response.ok) throw new Error("Unauthenticated")
+    setUser(await response.json() as User)
+  }
 
   useEffect(() => {
     let active = true
@@ -41,7 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.refresh()
   }
 
-  return <AuthContext.Provider value={{ user, loading, logout }}>{children}</AuthContext.Provider>
+  return <AuthContext.Provider value={{ user, loading, logout, refreshUser }}>{children}</AuthContext.Provider>
 }
 
 export function useAuth() {

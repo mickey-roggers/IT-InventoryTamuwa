@@ -24,6 +24,7 @@ export default function AssetsPage() {
     endpoint="assets/"
     searchPlaceholder="Search asset ID, serial number, model, or assignee…"
     emptyMessage="Add the first asset to begin tracking inventory."
+    rowHref={(item) => `/assets/${item.id}`}
     create={{ title: "New asset", description: "Register a device in the inventory.", buttonLabel: "Add asset", fields: [
       { name: "asset_id", label: "Asset ID", required: true, placeholder: "e.g. TAM-LAP-0142" },
       { name: "serial_number", label: "Serial number", required: true },

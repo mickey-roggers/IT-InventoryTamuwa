@@ -1,6 +1,7 @@
 "use client"
 
 import { useDeferredValue, useState } from "react"
+import { useRouter } from "next/navigation"
 import useSWR from "swr"
 import { ChevronLeft, ChevronRight, Search } from "lucide-react"
 
@@ -13,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { apiFetch, unpackResults } from "@/lib/api"
 import type { Paginated } from "@/lib/types"
+import { cn } from "@/lib/utils"
 
 export type Column<T> = {
   label: string
@@ -20,7 +22,8 @@ export type Column<T> = {
   className?: string
 }
 
-export function ResourcePage<T>({ title, description, eyebrow, endpoint, searchPlaceholder, emptyMessage, columns, create }: { title: string; description: string; eyebrow?: string; endpoint: string; searchPlaceholder: string; emptyMessage: string; columns: Column<T>[]; create?: { title: string; description: string; fields: FormField[]; buttonLabel?: string } }) {
+export function ResourcePage<T>({ title, description, eyebrow, endpoint, searchPlaceholder, emptyMessage, columns, create, rowHref }: { title: string; description: string; eyebrow?: string; endpoint: string; searchPlaceholder: string; emptyMessage: string; columns: Column<T>[]; create?: { title: string; description: string; fields: FormField[]; buttonLabel?: string }; rowHref?: (item: T) => string }) {
+  const router = useRouter()
   const [search, setSearch] = useState("")
   const deferredSearch = useDeferredValue(search)
   const [page, setPage] = useState(1)
@@ -49,7 +52,7 @@ export function ResourcePage<T>({ title, description, eyebrow, endpoint, searchP
           ) : rows.length === 0 ? (
             <div className="p-14 text-center"><p className="font-medium">Nothing here yet</p><p className="mt-1 text-sm text-muted-foreground">{emptyMessage}</p></div>
           ) : (
-            <div className="overflow-x-auto"><Table><TableHeader><TableRow>{columns.map((column, index) => <TableHead key={index} className={column.className}>{column.label}</TableHead>)}</TableRow></TableHeader><TableBody>{rows.map((item, rowIndex) => <TableRow key={(item as { id?: string | number }).id ?? rowIndex}>{columns.map((column, index) => <TableCell key={index} className={column.className}>{column.render(item)}</TableCell>)}</TableRow>)}</TableBody></Table></div>
+            <div className="overflow-x-auto"><Table><TableHeader><TableRow>{columns.map((column, index) => <TableHead key={index} className={column.className}>{column.label}</TableHead>)}</TableRow></TableHeader><TableBody>{rows.map((item, rowIndex) => { const href = rowHref?.(item); return <TableRow key={(item as { id?: string | number }).id ?? rowIndex} tabIndex={href ? 0 : undefined} className={cn(href && "cursor-pointer hover:bg-muted/60")} onClick={() => href && router.push(href)} onKeyDown={(event) => { if (href && (event.key === "Enter" || event.key === " ")) router.push(href) }}>{columns.map((column, index) => <TableCell key={index} className={column.className}>{column.render(item)}</TableCell>)}</TableRow> })}</TableBody></Table></div>
           )}
         </CardContent>
         {(hasPrevious || hasNext) && <div className="flex items-center justify-end gap-2 border-t px-4 py-3"><Button variant="outline" size="sm" disabled={!hasPrevious} onClick={() => setPage((value) => Math.max(1, value - 1))}><ChevronLeft />Previous</Button><span className="px-2 font-mono text-xs text-muted-foreground">Page {page}</span><Button variant="outline" size="sm" disabled={!hasNext} onClick={() => setPage((value) => value + 1)}>Next<ChevronRight /></Button></div>}

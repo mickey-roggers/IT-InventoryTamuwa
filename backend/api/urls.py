@@ -47,6 +47,9 @@ router.register(r"action-taken-options", views.ActionTakenOptionViewSet, basenam
 
 # Technicians endpoints
 router.register(r"technicians", views.TechnicianViewSet, basename="technician")
+router.register(r"technician-assistants", views.TechnicianAssistantViewSet, basename="technician-assistant")
+router.register(r"technician-services", views.TechnicianServiceViewSet, basename="technician-service")
+router.register(r"technician-recommendations", views.TechnicianRecommendationViewSet, basename="technician-recommendation")
 
 # New Endpoints
 router.register(r'people', views.PersonViewSet, basename='person')
@@ -65,7 +68,9 @@ router.register(r'asset-links', views.AssetLinkViewSet, basename='asset-link')
 urlpatterns = [
     path("", include(router.urls)),
     path("dashboard/", views.DashboardStatsView.as_view(), name="dashboard-stats"),
+    path("asset-quantities/", views.AssetQuantitiesView.as_view(), name="asset-quantities"),
     path('auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('auth/me/', views.CurrentUserView.as_view(), name='current-user'),
+    path('auth/change-password/', views.ChangePasswordView.as_view(), name='change-password'),
 ]

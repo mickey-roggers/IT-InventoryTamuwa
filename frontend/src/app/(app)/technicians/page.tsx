@@ -7,6 +7,7 @@ import type { Technician } from "@/lib/types"
 
 export default function TechniciansPage() {
   return <ResourcePage<Technician> eyebrow="Service network" title="Technicians" description="Maintain the approved technician and repair-company directory." endpoint="technicians/" searchPlaceholder="Search technicians or companies…" emptyMessage="No active technicians are registered."
+    rowHref={(item) => `/technicians/${item.id}`}
     create={{ title: "New technician", description: "Add a repair contact to the service network.", buttonLabel: "Add technician", fields: [
       { name: "company_name", label: "Company", required: true },
       { name: "technician_name", label: "Technician name", required: true },

@@ -7,6 +7,7 @@ import type { Requisition } from "@/lib/types"
 
 export default function RequisitionsPage() {
   return <ResourcePage<Requisition> eyebrow="Procurement" title="Requisitions" description="Monitor purchase requests and their approval or buying status." endpoint="requisitions/" searchPlaceholder="Search requisition number or title…" emptyMessage="No requisitions have been raised."
+    rowHref={(item) => `/requisitions/${item.id}`}
     create={{ title: "New requisition", description: "Open a new procurement request. Items can be managed through the API/admin.", buttonLabel: "New requisition", fields: [
       { name: "req_no", label: "Requisition number", required: true, placeholder: "e.g. REQ-2026-041" },
       { name: "company", label: "Company", type: "select", required: true, defaultValue: "Tamuwa", options: ["Tamuwa", "Tera", "Flux"].map((value) => ({ label: value, value })) },

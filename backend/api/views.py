@@ -10,9 +10,11 @@ To add a new API endpoint:
 3. Register it in api/urls.py
 """
 
-from rest_framework import permissions, viewsets, filters
+from rest_framework import permissions, viewsets, filters, serializers, status
+from rest_framework.decorators import action
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from django.contrib.auth import password_validation
 from django.db.models import Count, Q
 from django.utils import timezone
 
@@ -37,15 +39,25 @@ from assets.serializers import (
 # Users API
 from django.contrib.auth.models import User
 from users.models import UserProfile
-from users.serializers import UserSerializer, UserProfileSerializer
+from users.serializers import UserSerializer, UserAdminSerializer, UserProfileSerializer
 
 # Maintenance API
 from maintenance.models import MaintenanceLog, ActionTakenOption
 from maintenance.serializers import MaintenanceLogSerializer, ActionTakenOptionSerializer
 
 # Technicians API
-from technicians.models import Technician
-from technicians.serializers import TechnicianSerializer
+from technicians.models import (
+    Technician,
+    TechnicianAssistant,
+    TechnicianService,
+    TechnicianRecommendation,
+)
+from technicians.serializers import (
+    TechnicianSerializer,
+    TechnicianAssistantSerializer,
+    TechnicianServiceSerializer,
+    TechnicianRecommendationSerializer,
+)
 
 
 # ============================================================================
@@ -59,7 +71,17 @@ class IsAdminOrReadOnly(permissions.BasePermission):
     def has_permission(self, request, view):
         if request.method in permissions.SAFE_METHODS:
             return request.user.is_authenticated
-        return request.user.is_staff or request.user.is_superuser
+        role = getattr(getattr(request.user, 'profile', None), 'role', '')
+        return request.user.is_staff or request.user.is_superuser or role in ('admin', 'super_admin')
+
+
+class IsStaffUser(permissions.BasePermission):
+    def has_permission(self, request, view):
+        role = getattr(getattr(request.user, 'profile', None), 'role', '')
+        return bool(
+            request.user and request.user.is_authenticated and
+            (request.user.is_staff or request.user.is_superuser or role in ('admin', 'super_admin'))
+        )
 
 
 # ============================================================================
@@ -109,6 +131,8 @@ class DepartmentViewSet(viewsets.ModelViewSet):
     queryset = Department.objects.all().order_by("name")
     serializer_class = DepartmentSerializer
     permission_classes = [IsAdminOrReadOnly]
+    filter_backends = [filters.SearchFilter]
+    search_fields = ["name", "description"]
 
 
 class AssetViewSet(viewsets.ModelViewSet):
@@ -164,6 +188,14 @@ class AssetViewSet(viewsets.ModelViewSet):
         elif assigned == "unassigned":
             qs = qs.filter(assigned_to__isnull=True)
 
+        person_id = self.request.query_params.get("person")
+        if person_id:
+            qs = qs.filter(assigned_to_id=person_id)
+
+        department_id = self.request.query_params.get("department")
+        if department_id:
+            qs = qs.filter(department_id=department_id)
+
         return qs
 
     def perform_create(self, serializer):
@@ -171,6 +203,11 @@ class AssetViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
+
+    def perform_destroy(self, instance):
+        instance.is_deleted = True
+        instance.updated_by = self.request.user
+        instance.save(update_fields=["is_deleted", "updated_by", "updated_at"])
 
 
 class AssignmentHistoryViewSet(viewsets.ReadOnlyModelViewSet):
@@ -187,6 +224,14 @@ class AssignmentHistoryViewSet(viewsets.ReadOnlyModelViewSet):
     )
     serializer_class = AssignmentHistorySerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        for field in ("asset", "person", "department"):
+            value = self.request.query_params.get(field)
+            if value:
+                qs = qs.filter(**{f"{field}_id": value})
+        return qs
 
 
 class ActivityLogViewSet(viewsets.ReadOnlyModelViewSet):
@@ -209,16 +254,52 @@ class ActivityLogViewSet(viewsets.ReadOnlyModelViewSet):
 # USERS API VIEWSETS
 # ============================================================================
 
-class UserViewSet(viewsets.ReadOnlyModelViewSet):
+class UserViewSet(viewsets.ModelViewSet):
     """
     API endpoint for viewing users.
     
     list: Get all users
     retrieve: Get a specific user
     """
-    queryset = User.objects.all().order_by("username")
-    serializer_class = UserSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    queryset = User.objects.select_related("profile", "profile__department").all().order_by("username")
+    serializer_class = UserAdminSerializer
+    filter_backends = [filters.SearchFilter]
+    search_fields = ["username", "first_name", "last_name", "email", "profile__employee_id"]
+
+    def get_permissions(self):
+        if self.action == 'list':
+            return [permissions.IsAuthenticated()]
+        return [IsStaffUser()]
+
+    def destroy(self, request, *args, **kwargs):
+        if self.get_object() == request.user:
+            return Response({"detail": "You cannot delete your own account."}, status=status.HTTP_400_BAD_REQUEST)
+        return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=["post"], url_path="toggle-active")
+    def toggle_active(self, request, pk=None):
+        user = self.get_object()
+        if user == request.user:
+            return Response({"detail": "You cannot deactivate your own account."}, status=status.HTTP_400_BAD_REQUEST)
+        user.is_active = not user.is_active
+        user.save(update_fields=["is_active"])
+        return Response(self.get_serializer(user).data)
+
+    @action(detail=True, methods=["post"], url_path="reset-password")
+    def reset_password(self, request, pk=None):
+        user = self.get_object()
+        new_password = request.data.get("password", "")
+        try:
+            password_validation.validate_password(new_password, user)
+        except Exception as exc:
+            messages = getattr(exc, "messages", [str(exc)])
+            return Response({"password": messages}, status=status.HTTP_400_BAD_REQUEST)
+        user.set_password(new_password)
+        user.save(update_fields=["password"])
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        profile.must_change_password = True
+        profile.save(update_fields=["must_change_password"])
+        return Response({"detail": "Password reset successfully."})
 
 
 class UserProfileViewSet(viewsets.ModelViewSet):
@@ -234,7 +315,7 @@ class UserProfileViewSet(viewsets.ModelViewSet):
     """
     queryset = UserProfile.objects.select_related("user", "department").all()
     serializer_class = UserProfileSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsStaffUser]
 
 
 # ============================================================================
@@ -274,6 +355,8 @@ class MaintenanceLogViewSet(viewsets.ModelViewSet):
     )
     serializer_class = MaintenanceLogSerializer
     permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["asset__asset_id", "description", "notes", "performed_by__technician_name"]
 
     def perform_create(self, serializer):
         serializer.save(reported_by=self.request.user)
@@ -290,9 +373,44 @@ class TechnicianViewSet(viewsets.ModelViewSet):
     partial_update: Partially update a technician
     destroy: Delete a technician
     """
-    queryset = Technician.objects.filter(is_active=True).order_by("company_name", "technician_name")
+    queryset = Technician.objects.prefetch_related("assistants", "services").all().order_by("company_name", "technician_name")
     serializer_class = TechnicianSerializer
     permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [filters.SearchFilter]
+    search_fields = ["company_name", "technician_name", "email", "phone_number", "specialization"]
+
+
+class TechnicianAssistantViewSet(viewsets.ModelViewSet):
+    queryset = TechnicianAssistant.objects.select_related("technician").all()
+    serializer_class = TechnicianAssistantSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        technician = self.request.query_params.get("technician")
+        return qs.filter(technician_id=technician) if technician else qs
+
+
+class TechnicianServiceViewSet(viewsets.ModelViewSet):
+    queryset = TechnicianService.objects.select_related("technician").all()
+    serializer_class = TechnicianServiceSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        technician = self.request.query_params.get("technician")
+        return qs.filter(technician_id=technician) if technician else qs
+
+
+class TechnicianRecommendationViewSet(viewsets.ModelViewSet):
+    queryset = TechnicianRecommendation.objects.select_related("technician").all()
+    serializer_class = TechnicianRecommendationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        technician = self.request.query_params.get("technician")
+        return qs.filter(technician_id=technician) if technician else qs
 
 
 # ============================================================================
@@ -365,28 +483,102 @@ class DashboardStatsView(APIView):
 
         return Response(data)
 
+
+class AssetQuantitiesView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        categories = Category.objects.annotate(
+            total=Count("assets", filter=Q(assets__is_deleted=False)),
+            available=Count("assets", filter=Q(assets__is_deleted=False, assets__status__name__iexact="Available")),
+            in_use=Count("assets", filter=Q(assets__is_deleted=False, assets__status__name__iexact="In Use")),
+            maintenance=Count("assets", filter=Q(assets__is_deleted=False, assets__status__name__icontains="Maintenance")),
+        ).order_by("name")
+        return Response([
+            {
+                "id": category.id,
+                "name": category.name,
+                "total": category.total,
+                "available": category.available,
+                "in_use": category.in_use,
+                "maintenance": category.maintenance,
+            }
+            for category in categories
+        ])
+
 # Current User View
 class CurrentUserView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
-    def get(self, request):
-        user = request.user
-        profile = getattr(user, 'profile', None)
-        return Response({
+    @staticmethod
+    def response_data(user, profile):
+        return {
             'id': user.id,
             'username': user.username,
             'email': user.email,
             'first_name': user.first_name,
             'last_name': user.last_name,
+            'is_active': user.is_active,
             'is_staff': user.is_staff,
             'is_superuser': user.is_superuser,
             'profile': {
+                'id': profile.id,
                 'role': profile.role if profile else 'viewer',
+                'department_id': profile.department_id,
                 'department': profile.department.name if profile and profile.department else None,
                 'phone_number': profile.phone_number if profile else '',
                 'employee_id': profile.employee_id if profile else '',
             } if profile else None,
-        })
+        }
+
+    def get(self, request):
+        user = request.user
+        profile = UserProfile.objects.select_related('department').filter(user=user).first()
+        return Response(self.response_data(user, profile))
+
+    def patch(self, request):
+        user = request.user
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        for field in ("first_name", "last_name", "email"):
+            if field in request.data:
+                setattr(user, field, request.data[field])
+        user.save(update_fields=["first_name", "last_name", "email"])
+        for field in ("phone_number", "employee_id"):
+            if field in request.data:
+                value = request.data[field]
+                if field == "employee_id" and value and UserProfile.objects.filter(employee_id=value).exclude(user=user).exists():
+                    return Response({"employee_id": ["This employee ID is already in use."]}, status=status.HTTP_400_BAD_REQUEST)
+                setattr(profile, field, value or None if field == "employee_id" else value)
+        if "department_id" in request.data:
+            department_id = request.data["department_id"] or None
+            if department_id and not Department.objects.filter(pk=department_id).exists():
+                return Response({"department_id": ["Select a valid department."]}, status=status.HTTP_400_BAD_REQUEST)
+            profile.department_id = department_id
+        profile.save()
+        profile.refresh_from_db()
+        return Response(self.response_data(user, profile))
+
+
+class ChangePasswordView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        if not user.check_password(request.data.get("current_password", "")):
+            return Response({"current_password": ["The current password is incorrect."]}, status=status.HTTP_400_BAD_REQUEST)
+        new_password = request.data.get("new_password", "")
+        try:
+            password_validation.validate_password(new_password, user)
+        except Exception as exc:
+            return Response({"new_password": getattr(exc, "messages", [str(exc)])}, status=status.HTTP_400_BAD_REQUEST)
+        user.set_password(new_password)
+        user.save(update_fields=["password"])
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        profile.must_change_password = False
+        profile.is_first_login = False
+        profile.password_changed_at = timezone.now()
+        profile.save(update_fields=["must_change_password", "is_first_login", "password_changed_at"])
+        return Response({"detail": "Password changed successfully."})
 
 
 # Person ViewSet
@@ -399,6 +591,11 @@ class PersonViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminOrReadOnly]
     filter_backends = [filters.SearchFilter]
     search_fields = ['first_name', 'last_name']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        department = self.request.query_params.get('department')
+        return qs.filter(department_id=department) if department else qs
 
 
 # Issues
@@ -539,7 +736,37 @@ class RequisitionItemViewSet(viewsets.ModelViewSet):
         req_id = self.request.query_params.get('requisition')
         if req_id:
             qs = qs.filter(requisition_id=req_id)
+        is_approved = self.request.query_params.get('is_approved')
+        if is_approved in ('true', 'false'):
+            qs = qs.filter(is_approved=is_approved == 'true')
+        if self.request.query_params.get('bought_queue') == 'true':
+            qs = qs.filter(requisition__status='Bought', is_approved=True, item_type='Asset', is_processed=False)
         return qs
+
+    @action(detail=True, methods=['post'])
+    def process(self, request, pk=None):
+        item = self.get_object()
+        if not (request.user.is_staff or getattr(getattr(request.user, 'profile', None), 'role', '') in ('admin', 'super_admin')):
+            return Response({'detail': 'Administrator access is required.'}, status=status.HTTP_403_FORBIDDEN)
+        asset_id = request.data.get('asset_id')
+        try:
+            asset = Asset.objects.get(pk=asset_id, is_deleted=False)
+        except (Asset.DoesNotExist, TypeError, ValueError):
+            return Response({'asset_id': ['Select a valid asset.']}, status=status.HTTP_400_BAD_REQUEST)
+        if item.item_type != 'Asset' or item.requisition.status != 'Bought' or not item.is_approved:
+            return Response({'detail': 'This item is not eligible for the bought-items queue.'}, status=status.HTTP_400_BAD_REQUEST)
+        asset.requisition = item.requisition
+        asset.updated_by = request.user
+        asset.save(update_fields=['requisition', 'updated_by', 'updated_at'])
+        if item.quantity > 1:
+            item.quantity -= 1
+            item.save(update_fields=['quantity'])
+        else:
+            item.is_processed = True
+            item.processed_at = timezone.now()
+            item.processed_by = request.user
+            item.save(update_fields=['is_processed', 'processed_at', 'processed_by'])
+        return Response(self.get_serializer(item).data)
 
 
 # Tasks
@@ -587,8 +814,22 @@ class AssetLinkSerializer(serializers.ModelSerializer):
     class Meta:
         model = AssetLink
         fields = '__all__'
+        read_only_fields = ['created_by', 'created_at']
+
+    def validate(self, attrs):
+        if attrs.get('asset') == attrs.get('linked_asset'):
+            raise serializers.ValidationError({'linked_asset': 'An asset cannot be linked to itself.'})
+        return attrs
 
 class AssetLinkViewSet(viewsets.ModelViewSet):
     queryset = AssetLink.objects.select_related('asset', 'linked_asset').all()
     serializer_class = AssetLinkSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        asset_id = self.request.query_params.get('asset')
+        return qs.filter(Q(asset_id=asset_id) | Q(linked_asset_id=asset_id)) if asset_id else qs
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)

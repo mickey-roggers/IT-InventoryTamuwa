@@ -91,6 +91,7 @@ class MaintenanceLogSerializer(serializers.ModelSerializer):
             "completed_by",
             "completed_by_id",
             "notes",
+            "requisition",
             "created_at",
             "updated_at",
         ]

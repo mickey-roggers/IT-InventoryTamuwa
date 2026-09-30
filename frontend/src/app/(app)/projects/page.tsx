@@ -8,6 +8,7 @@ import type { Project } from "@/lib/types"
 
 export default function ProjectsPage() {
   return <ResourcePage<Project> eyebrow="Planning" title="Projects" description="Coordinate ICT initiatives, priorities, target dates, and outcomes." endpoint="projects/" searchPlaceholder="Search projects…" emptyMessage="No projects have been created."
+    rowHref={(item) => `/projects/${item.id}`}
     create={{ title: "New project", description: "Create an ICT project record.", buttonLabel: "Add project", fields: [
       { name: "title", label: "Title", required: true },
       { name: "date", label: "Target date", type: "date" },

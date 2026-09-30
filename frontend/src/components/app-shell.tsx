@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation"
 import useSWR from "swr"
 import {
   Bell,
+  BarChart3,
   Boxes,
   Building2,
   ClipboardCheck,
@@ -12,13 +13,18 @@ import {
   Gauge,
   HardHat,
   History,
+  Link2,
   LogOut,
   Menu,
   PackageSearch,
+  ShoppingCart,
   ShieldCheck,
   TicketCheck,
+  UserCog,
+  UserRound,
   Users,
   Wrench,
+  XCircle,
 } from "lucide-react"
 
 import { useAuth } from "@/components/providers/auth-provider"
@@ -38,15 +44,22 @@ import { apiFetch, unpackResults } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
 const navigation = [
-  { href: "/dashboard", label: "Overview", icon: Gauge },
+  { href: "/dashboard", label: "Dashboard", icon: Gauge },
   { href: "/assets", label: "Assets", icon: Boxes },
+  { href: "/asset-links", label: "Asset Links", icon: Link2 },
+  { href: "/quantities", label: "Quantities", icon: BarChart3 },
+  { href: "/requisitions", label: "Requisitions", icon: ClipboardCheck },
+  { href: "/requisitions/unapproved", label: "Not Approved Items", icon: XCircle },
+  { href: "/requisitions/bought-queue", label: "Bought Items Queue", icon: ShoppingCart },
   { href: "/maintenance", label: "Maintenance", icon: Wrench },
   { href: "/issues", label: "Issues", icon: TicketCheck },
   { href: "/projects", label: "Projects", icon: FolderKanban },
-  { href: "/requisitions", label: "Requisitions", icon: ClipboardCheck },
   { href: "/tasks", label: "Tasks", icon: PackageSearch },
   { href: "/technicians", label: "Technicians", icon: HardHat },
-  { href: "/directory", label: "Directory", icon: Users },
+  { href: "/directory", label: "People & Depts", icon: Users },
+  { href: "/profile", label: "Profile", icon: UserRound },
+  { href: "/notifications", label: "Notifications", icon: Bell },
+  { href: "/users", label: "User Management", icon: UserCog, adminOnly: true },
   { href: "/activity", label: "Activity", icon: History },
 ]
 
@@ -66,10 +79,17 @@ function Brand() {
 
 function Navigation({ close }: { close?: () => void }) {
   const pathname = usePathname()
+  const { user } = useAuth()
+  const isAdmin = Boolean(user?.is_staff || user?.is_superuser || user?.profile?.role === "admin" || user?.profile?.role === "super_admin")
+  const visibleNavigation = navigation.filter((item) => !item.adminOnly || isAdmin)
+  const activeHref = visibleNavigation.reduce<string | undefined>((match, item) => {
+    if (pathname !== item.href && !pathname.startsWith(`${item.href}/`)) return match
+    return !match || item.href.length > match.length ? item.href : match
+  }, undefined)
   return (
     <nav className="mt-8 space-y-1">
-      {navigation.map((item) => {
-        const active = pathname === item.href || pathname.startsWith(`${item.href}/`)
+      {visibleNavigation.map((item) => {
+        const active = activeHref === item.href
         return (
           <Link
             key={item.href}
@@ -93,10 +113,10 @@ function Navigation({ close }: { close?: () => void }) {
 
 function Sidebar() {
   return (
-    <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-sidebar-border bg-sidebar px-4 py-5 lg:block">
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 overflow-y-auto border-r border-sidebar-border bg-sidebar px-4 py-5 lg:block">
       <Brand />
       <Navigation />
-      <div className="absolute inset-x-4 bottom-5 rounded-xl border border-sidebar-border bg-white/5 p-3">
+      <div className="mt-6 rounded-xl border border-sidebar-border bg-white/5 p-3">
         <p className="text-xs font-medium text-sidebar-foreground">System status</p>
         <p className="mt-1 flex items-center gap-2 text-xs text-sidebar-foreground/55">
           <span className="size-1.5 rounded-full bg-emerald-400" /> API connected
@@ -108,6 +128,7 @@ function Sidebar() {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth()
+  const isAdmin = Boolean(user?.is_staff || user?.is_superuser || user?.profile?.role === "admin" || user?.profile?.role === "super_admin")
   const { data: notifications } = useSWR("notifications/?page_size=50", apiFetch)
   const unread = unpackResults<{ is_read: boolean }>(notifications as never).filter((item) => !item.is_read).length
   const initials = `${user?.first_name?.[0] ?? ""}${user?.last_name?.[0] ?? user?.username?.[0] ?? "U"}`.toUpperCase()
@@ -138,6 +159,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel><span className="block truncate">{user?.username}</span><span className="block truncate text-xs font-normal text-muted-foreground">{user?.email || "No email set"}</span></DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild><Link href="/profile"><UserRound /> Profile</Link></DropdownMenuItem>
+                {isAdmin && <DropdownMenuItem asChild><Link href="/users"><UserCog /> User management</Link></DropdownMenuItem>}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={logout} className="text-destructive"><LogOut /> Sign out</DropdownMenuItem>
               </DropdownMenuContent>
