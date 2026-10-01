@@ -1,7 +1,7 @@
 import "server-only"
 
 export const DJANGO_API_URL = (
-  process.env.DJANGO_API_URL || "http://127.0.0.1:8000"
+  process.env.DJANGO_API_URL || "https://ict-inventory.up.railway.app"
 ).replace(/\/$/, "")
 
 export const ACCESS_COOKIE = "inventory_access"

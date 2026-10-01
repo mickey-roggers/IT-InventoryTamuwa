@@ -27,7 +27,7 @@ This keeps backend credentials out of client-side JavaScript and avoids calling 
 
 ## Setup
 
-Requires Node.js 20.9 or newer and a running Django backend.
+Requires Node.js 20.9 or newer. By default, the frontend uses the deployed Railway backend; override the environment variables to use a local Django server.
 
 ```powershell
 Copy-Item .env.example .env.local
@@ -41,10 +41,12 @@ Open [http://localhost:3000](http://localhost:3000).
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `DJANGO_API_URL` | `http://127.0.0.1:8000` | Django origin as seen by the Next.js server |
-| `NEXT_PUBLIC_DJANGO_URL` | `http://127.0.0.1:8000` | Public origin used for the Django admin link |
+| `DJANGO_API_URL` | `https://ict-inventory.up.railway.app` | Django origin as seen by the Next.js server |
+| `NEXT_PUBLIC_DJANGO_URL` | `https://ict-inventory.up.railway.app` | Public origin used for the Django admin link |
 
 Do not include trailing slashes.
+
+To use a local backend, set both values in `.env.local` to `http://127.0.0.1:8000`.
 
 ## Commands
 

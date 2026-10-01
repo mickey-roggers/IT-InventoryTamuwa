@@ -7,3 +7,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+## Project API
+
+- The canonical backend is deployed at `https://ict-inventory.up.railway.app`.
+- Frontend requests must continue through `/api/backend/*`; the Next.js server proxy uses `DJANGO_API_URL` to reach Railway.
+- `NEXT_PUBLIC_DJANGO_URL` is used only for public links such as the Django admin panel.

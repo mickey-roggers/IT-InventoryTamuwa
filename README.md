@@ -4,6 +4,8 @@ An internal inventory and operations platform for tracking company IT assets fro
 
 The repository contains a Django REST API and a separate Next.js application. The frontend sends authenticated requests through its own server-side proxy, keeping access and refresh tokens out of browser JavaScript.
 
+The production Django backend is deployed at [https://ict-inventory.up.railway.app](https://ict-inventory.up.railway.app). The frontend defaults to this origin unless its API environment variables are overridden for local development.
+
 ```text
 Browser → Next.js frontend → /api/backend proxy → Django REST API → SQLite/PostgreSQL
                                           └────→ Django admin
@@ -124,6 +126,8 @@ Start from the committed example files; do not commit real credentials.
 
 Do not add a trailing slash to either frontend URL value.
 
+Both variables default to `https://ict-inventory.up.railway.app`. Set them to `http://127.0.0.1:8000` only when running Django locally.
+
 ## Useful commands
 
 ### Backend
@@ -157,7 +161,7 @@ The Django API issues JWT access and refresh tokens. Next.js stores them in HTTP
 
 ## Deployment
 
-The backend includes Railway configuration in `backend/railway.json`. Its deployment process runs migrations, ensures a superuser exists, initializes default data, collects static files, and starts Gunicorn. Configure all production secrets in the hosting platform rather than committing `.env` files.
+The backend is deployed on Railway at [https://ict-inventory.up.railway.app](https://ict-inventory.up.railway.app). Its `backend/railway.json` deployment process runs migrations, ensures a superuser exists, initializes default data, collects static files, and starts Gunicorn. Configure all production secrets in the hosting platform rather than committing `.env` files.
 
 The frontend can be deployed anywhere that supports Next.js. Set both frontend environment variables to the deployed Django origin and ensure that origin is allowed by the backend CORS and host settings.
 
