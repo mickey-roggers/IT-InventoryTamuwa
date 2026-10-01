@@ -100,6 +100,33 @@ class ExtendedApiTests(TestCase):
         self.assertEqual(response.data[0]["available"], 1)
         self.assertEqual(response.data[0]["in_use"], 1)
 
+    def test_asset_excel_export_returns_downloadable_workbook(self):
+        category = Category.objects.create(name="Laptop", short_code="LAP")
+        available = StatusOption.objects.create(name="Available")
+        Asset.objects.create(
+            asset_id="LAP-001",
+            category=category,
+            model_description="Export laptop",
+            serial_number="EXPORT-SER-001",
+            status=available,
+            created_by=self.admin,
+            updated_by=self.admin,
+        )
+        self.client.force_authenticate(self.viewer)
+
+        response = self.client.get("/api/assets/export/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertEqual(
+            response["Content-Disposition"],
+            'attachment; filename="IT_Inventory_Export.xlsx"',
+        )
+        self.assertTrue(response.content.startswith(b"PK"))
+
     def test_bought_queue_processing_links_assets_and_tracks_quantity(self):
         category = Category.objects.create(name="Monitor", short_code="MON")
         available = StatusOption.objects.create(name="Available")
