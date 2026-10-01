@@ -17,6 +17,7 @@ export interface Category {
   id: number
   name: string
   description?: string
+  short_code?: string | null
 }
 
 export interface StatusOption {
@@ -48,6 +49,8 @@ export interface Asset {
   admin_comments: string
   purchased_from: string
   purchase_cost: string | null
+  requisition: number | null
+  requisition_display: string | null
   is_deleted: boolean
   created_at: string
   updated_at: string
@@ -78,6 +81,8 @@ export interface DashboardStats {
   status_counts: Record<string, number>
   assets_this_month: number
   maintenance_today: number
+  total_items_bought: number
+  total_value_bought: number | string
   categories: { name: string; asset_count: number }[]
   recent_activity: {
     asset_id: string | null
@@ -91,6 +96,7 @@ export interface DashboardStats {
 export interface MaintenanceLog {
   id: number
   asset: string
+  timestamp: string
   date_reported: string
   date_completed: string | null
   description: string
@@ -143,6 +149,11 @@ export interface Project {
   comments_count: number
   created_at: string
   updated_at: string
+  category_availability: {
+    category: { id: number; name: string }
+    available_count: number
+    assets: { id: number; asset_id: string; model_description: string; status: string; assigned_to: string | null; department: string | null }[]
+  }[]
 }
 
 export interface ProjectItem {
@@ -264,6 +275,18 @@ export interface AssetLink {
   created_at: string
 }
 
+export interface AssetLinkHistory {
+  id: number
+  asset: number
+  linked_asset: number
+  asset_display: string
+  linked_asset_display: string
+  notes: string
+  linked_at: string | null
+  unlinked_at: string
+  unlinked_by_username: string | null
+}
+
 export interface AssetQuantity {
   id: number
   name: string
@@ -271,5 +294,7 @@ export interface AssetQuantity {
   available: number
   in_use: number
   maintenance: number
+  missing: number
+  retired: number
 }
 

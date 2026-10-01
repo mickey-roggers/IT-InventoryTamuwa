@@ -63,12 +63,14 @@ router.register(r'requisition-items', views.RequisitionItemViewSet, basename='re
 router.register(r'tasks', views.TaskViewSet, basename='task')
 router.register(r'notifications', views.NotificationViewSet, basename='notification')
 router.register(r'asset-links', views.AssetLinkViewSet, basename='asset-link')
+router.register(r'asset-link-history', views.AssetLinkHistoryViewSet, basename='asset-link-history')
 
 # API URL patterns
 urlpatterns = [
     path("", include(router.urls)),
     path("dashboard/", views.DashboardStatsView.as_view(), name="dashboard-stats"),
     path("asset-quantities/", views.AssetQuantitiesView.as_view(), name="asset-quantities"),
+    path("system-alerts/", views.SystemAlertsView.as_view(), name="system-alerts"),
     path('auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('auth/me/', views.CurrentUserView.as_view(), name='current-user'),

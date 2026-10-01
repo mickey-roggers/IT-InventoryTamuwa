@@ -17,8 +17,8 @@ class TechnicianServiceSerializer(serializers.ModelSerializer):
 
 
 class TechnicianSerializer(serializers.ModelSerializer):
-    assistants = TechnicianAssistantSerializer(many=True, read_only=True)
-    services = TechnicianServiceSerializer(many=True, read_only=True)
+    assistants = serializers.SerializerMethodField()
+    services = serializers.SerializerMethodField()
     
     class Meta:
         model = Technician
@@ -27,6 +27,12 @@ class TechnicianSerializer(serializers.ModelSerializer):
             'alternate_phone', 'address', 'specialization', 'is_active',
             'assistants', 'services', 'created_at', 'updated_at'
         ]
+
+    def get_assistants(self, obj):
+        return TechnicianAssistantSerializer(obj.assistants.filter(is_active=True), many=True).data
+
+    def get_services(self, obj):
+        return TechnicianServiceSerializer(obj.services.filter(is_active=True), many=True).data
 
 
 class TechnicianRecommendationSerializer(serializers.ModelSerializer):

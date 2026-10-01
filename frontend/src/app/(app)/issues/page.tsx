@@ -13,7 +13,9 @@ export default function IssuesPage() {
   const { data: departments } = useSWR<Paginated<Department> | Department[]>("departments/?page_size=100", apiFetch)
   return <ResourcePage<Issue> eyebrow="Support" title="Issues" description="Report operational problems and follow them through resolution." endpoint="issues/" searchPlaceholder="Search issue title or description…" emptyMessage="There are no reported issues."
     rowHref={(item) => `/issues/${item.id}`}
-    create={{ title: "New issue", description: "Report a problem for the ICT team.", buttonLabel: "Report issue", fields: [
+    filters={[{ name: "priority", label: "Priorities", options: ["Low", "Medium", "High", "Critical"].map((value) => ({ label: value, value })) }, { name: "status", label: "Statuses", options: ["Open", "Monitoring", "Resolved", "Closed"].map((value) => ({ label: value, value })) }]}
+    ordering={[{ label: "Newest", value: "-created_at" }, { label: "Oldest", value: "created_at" }, { label: "Priority", value: "priority" }, { label: "Status", value: "status" }]}
+    create={{ title: "New issue", description: "Report a problem for the ICT team.", buttonLabel: "Report issue", adminOnly: true, fields: [
       { name: "title", label: "Title", required: true },
       { name: "priority", label: "Priority", type: "select", required: true, defaultValue: "Medium", options: ["Low", "Medium", "High", "Critical"].map((value) => ({ label: value, value })) },
       { name: "status", label: "Status", type: "select", required: true, defaultValue: "Open", options: ["Open", "Monitoring", "Resolved", "Closed"].map((value) => ({ label: value, value })) },

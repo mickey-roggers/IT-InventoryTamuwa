@@ -11,12 +11,15 @@ To add a new API endpoint:
 """
 
 from rest_framework import permissions, viewsets, filters, serializers, status
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.decorators import action
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.contrib.auth import password_validation
+from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
+from datetime import timedelta
 
 # Assets API
 from assets.models import (
@@ -26,7 +29,10 @@ from assets.models import (
     Department,
     AssignmentHistory,
     ActivityLog,
+    AssetLink,
+    AssetLinkHistory,
 )
+from assets.utils import export_assets_excel
 from assets.serializers import (
     AssetSerializer,
     CategorySerializer,
@@ -84,6 +90,13 @@ class IsStaffUser(permissions.BasePermission):
         )
 
 
+def is_admin_user(user):
+    role = getattr(getattr(user, "profile", None), "role", "")
+    return bool(user and user.is_authenticated and (
+        user.is_staff or user.is_superuser or role in ("admin", "super_admin")
+    ))
+
+
 # ============================================================================
 # ASSETS API VIEWSETS
 # ============================================================================
@@ -134,6 +147,17 @@ class DepartmentViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter]
     search_fields = ["name", "description"]
 
+    @transaction.atomic
+    def perform_destroy(self, instance):
+        available = StatusOption.objects.filter(name="Available").first()
+        for asset in Asset.objects.filter(department=instance, is_deleted=False):
+            AssignmentHistory.objects.filter(asset=asset, department=instance, end_date__isnull=True).update(end_date=timezone.now())
+            asset.department = None
+            if not asset.assigned_to and available:
+                asset.status = available
+            asset.save()
+        instance.delete()
+
 
 class AssetViewSet(viewsets.ModelViewSet):
     """
@@ -161,8 +185,9 @@ class AssetViewSet(viewsets.ModelViewSet):
         "model_description",
         "assigned_to__first_name",
         "assigned_to__last_name",
+        "purchased_from",
     ]
-    ordering_fields = ["asset_id", "created_at", "purchase_date"]
+    ordering_fields = ["asset_id", "category__name", "model_description", "purchase_cost", "purchase_date", "status__name", "purchased_from", "created_at"]
     ordering = ["-created_at"]
 
     def get_queryset(self):
@@ -199,7 +224,39 @@ class AssetViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
+        requisition_item_id = serializer.validated_data.pop("requisition_item_id", None)
+        requisition_item = None
+        if requisition_item_id is not None:
+            try:
+                requisition_item = RequisitionItem.objects.select_related("requisition").get(pk=requisition_item_id)
+            except RequisitionItem.DoesNotExist:
+                raise ValidationError({"requisition_item_id": "Select a valid bought item."})
+            if requisition_item.requisition.status != "Bought" or not requisition_item.is_approved or requisition_item.item_type != "Asset" or requisition_item.is_processed:
+                raise ValidationError({"requisition_item_id": "This item is not available in the bought-items queue."})
+            serializer.validated_data["requisition"] = requisition_item.requisition
+        if not serializer.validated_data.get("asset_id"):
+            category = serializer.validated_data["category"]
+            if not category.short_code:
+                raise ValidationError({"asset_id": "This category needs a short code before an asset ID can be generated."})
+            prefix = f"{category.short_code}-"
+            used = Asset.objects.filter(category=category, asset_id__startswith=prefix).values_list("asset_id", flat=True)
+            numbers = []
+            for value in used:
+                try:
+                    numbers.append(int(value.removeprefix(prefix)))
+                except ValueError:
+                    continue
+            serializer.validated_data["asset_id"] = f"{prefix}{max(numbers, default=0) + 1:03d}"
         serializer.save(created_by=self.request.user, updated_by=self.request.user)
+        if requisition_item:
+            if requisition_item.quantity > 1:
+                requisition_item.quantity -= 1
+                requisition_item.save(update_fields=["quantity"])
+            else:
+                requisition_item.is_processed = True
+                requisition_item.processed_at = timezone.now()
+                requisition_item.processed_by = self.request.user
+                requisition_item.save(update_fields=["is_processed", "processed_at", "processed_by"])
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
@@ -209,8 +266,30 @@ class AssetViewSet(viewsets.ModelViewSet):
         instance.updated_by = self.request.user
         instance.save(update_fields=["is_deleted", "updated_by", "updated_at"])
 
+    @action(detail=False, methods=["get"], url_path="next-id")
+    def next_id(self, request):
+        category_id = request.query_params.get("category_id")
+        try:
+            category = Category.objects.get(pk=category_id)
+        except (Category.DoesNotExist, TypeError, ValueError):
+            return Response({"category_id": ["Select a valid category."]}, status=status.HTTP_400_BAD_REQUEST)
+        if not category.short_code:
+            return Response({"asset_id": ""})
+        prefix = f"{category.short_code}-"
+        numbers = []
+        for value in Asset.objects.filter(category=category, asset_id__startswith=prefix).values_list("asset_id", flat=True):
+            try:
+                numbers.append(int(value.removeprefix(prefix)))
+            except ValueError:
+                continue
+        return Response({"asset_id": f"{prefix}{max(numbers, default=0) + 1:03d}"})
 
-class AssignmentHistoryViewSet(viewsets.ReadOnlyModelViewSet):
+    @action(detail=False, methods=["get"], url_path="export")
+    def export(self, request):
+        return export_assets_excel(self.filter_queryset(self.get_queryset()))
+
+
+class AssignmentHistoryViewSet(viewsets.ModelViewSet):
     """
     API endpoint for viewing assignment history.
     
@@ -224,6 +303,12 @@ class AssignmentHistoryViewSet(viewsets.ReadOnlyModelViewSet):
     )
     serializer_class = AssignmentHistorySerializer
     permission_classes = [permissions.IsAuthenticated]
+    http_method_names = ["get", "delete", "head", "options"]
+
+    def get_permissions(self):
+        if self.action == "destroy":
+            return [IsStaffUser()]
+        return [permissions.IsAuthenticated()]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -249,6 +334,11 @@ class ActivityLogViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = ActivityLogSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        asset = self.request.query_params.get("asset")
+        return qs.filter(asset_id=asset) if asset else qs
+
 
 # ============================================================================
 # USERS API VIEWSETS
@@ -271,9 +361,22 @@ class UserViewSet(viewsets.ModelViewSet):
             return [permissions.IsAuthenticated()]
         return [IsStaffUser()]
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        role = self.request.query_params.get("role")
+        return qs.filter(profile__role=role) if role else qs
+
+    def perform_update(self, serializer):
+        if serializer.instance.is_superuser and not self.request.user.is_superuser:
+            raise PermissionDenied("Only a superuser can edit another superuser.")
+        serializer.save()
+
     def destroy(self, request, *args, **kwargs):
-        if self.get_object() == request.user:
+        target = self.get_object()
+        if target == request.user:
             return Response({"detail": "You cannot delete your own account."}, status=status.HTTP_400_BAD_REQUEST)
+        if target.is_superuser and not request.user.is_superuser:
+            raise PermissionDenied("Only a superuser can delete another superuser.")
         return super().destroy(request, *args, **kwargs)
 
     @action(detail=True, methods=["post"], url_path="toggle-active")
@@ -281,6 +384,8 @@ class UserViewSet(viewsets.ModelViewSet):
         user = self.get_object()
         if user == request.user:
             return Response({"detail": "You cannot deactivate your own account."}, status=status.HTTP_400_BAD_REQUEST)
+        if user.is_superuser and not request.user.is_superuser:
+            raise PermissionDenied("Only a superuser can modify another superuser.")
         user.is_active = not user.is_active
         user.save(update_fields=["is_active"])
         return Response(self.get_serializer(user).data)
@@ -288,18 +393,21 @@ class UserViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="reset-password")
     def reset_password(self, request, pk=None):
         user = self.get_object()
-        new_password = request.data.get("password", "")
-        try:
-            password_validation.validate_password(new_password, user)
-        except Exception as exc:
-            messages = getattr(exc, "messages", [str(exc)])
-            return Response({"password": messages}, status=status.HTTP_400_BAD_REQUEST)
-        user.set_password(new_password)
-        user.save(update_fields=["password"])
+        if user.is_superuser and not request.user.is_superuser:
+            raise PermissionDenied("Only a superuser can reset another superuser.")
+        new_password = request.data.get("password")
+        if new_password:
+            try:
+                password_validation.validate_password(new_password, user)
+            except Exception as exc:
+                messages = getattr(exc, "messages", [str(exc)])
+                return Response({"password": messages}, status=status.HTTP_400_BAD_REQUEST)
+            user.set_password(new_password)
+            user.save(update_fields=["password"])
         profile, _ = UserProfile.objects.get_or_create(user=user)
         profile.must_change_password = True
         profile.save(update_fields=["must_change_password"])
-        return Response({"detail": "Password reset successfully."})
+        return Response({"detail": "The user must change their password at next sign-in."})
 
 
 class UserProfileViewSet(viewsets.ModelViewSet):
@@ -334,7 +442,7 @@ class ActionTakenOptionViewSet(viewsets.ModelViewSet):
     """
     queryset = ActionTakenOption.objects.all().order_by("name")
     serializer_class = ActionTakenOptionSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdminOrReadOnly]
 
 
 class MaintenanceLogViewSet(viewsets.ModelViewSet):
@@ -354,12 +462,50 @@ class MaintenanceLogViewSet(viewsets.ModelViewSet):
         .order_by("-timestamp")
     )
     serializer_class = MaintenanceLogSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdminOrReadOnly]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ["asset__asset_id", "description", "notes", "performed_by__technician_name"]
+    ordering_fields = ["timestamp", "date_reported", "date_completed", "cost_of_repair", "maintenance_status"]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        maintenance_status = self.request.query_params.get("status")
+        performed_by = self.request.query_params.get("performed_by")
+        asset = self.request.query_params.get("asset")
+        if maintenance_status:
+            qs = qs.filter(maintenance_status=maintenance_status)
+        if performed_by:
+            qs = qs.filter(performed_by_id=performed_by)
+        if asset:
+            qs = qs.filter(asset_id=asset)
+        return qs
 
     def perform_create(self, serializer):
-        serializer.save(reported_by=self.request.user)
+        values = {"reported_by": self.request.user}
+        if serializer.validated_data.get("maintenance_status") == "Closed":
+            values["completed_by"] = self.request.user
+            values["date_completed"] = serializer.validated_data.get("date_completed") or timezone.now().date()
+        log = serializer.save(**values)
+        self._restore_closed_asset(log)
+
+    def perform_update(self, serializer):
+        if serializer.instance.maintenance_status == "Closed":
+            raise ValidationError({"detail": "Closed maintenance logs cannot be edited."})
+        values = {}
+        if serializer.validated_data.get("maintenance_status") == "Closed":
+            values["completed_by"] = self.request.user
+            values["date_completed"] = serializer.validated_data.get("date_completed") or timezone.now().date()
+        log = serializer.save(**values)
+        self._restore_closed_asset(log)
+
+    @staticmethod
+    def _restore_closed_asset(log):
+        if log.maintenance_status != "Closed":
+            return
+        status_name = "In Use" if log.asset.assigned_to or log.asset.department else "Available"
+        asset_status = StatusOption.objects.filter(name=status_name).first()
+        if asset_status:
+            Asset.objects.filter(pk=log.asset_id).update(status=asset_status)
 
 
 class TechnicianViewSet(viewsets.ModelViewSet):
@@ -373,17 +519,21 @@ class TechnicianViewSet(viewsets.ModelViewSet):
     partial_update: Partially update a technician
     destroy: Delete a technician
     """
-    queryset = Technician.objects.prefetch_related("assistants", "services").all().order_by("company_name", "technician_name")
+    queryset = Technician.objects.prefetch_related("assistants", "services").filter(is_active=True).order_by("company_name", "technician_name")
     serializer_class = TechnicianSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdminOrReadOnly]
     filter_backends = [filters.SearchFilter]
     search_fields = ["company_name", "technician_name", "email", "phone_number", "specialization"]
+
+    def get_queryset(self):
+        qs = Technician.objects.prefetch_related("assistants", "services").order_by("company_name", "technician_name")
+        return qs.filter(is_active=True) if self.action == "list" else qs
 
 
 class TechnicianAssistantViewSet(viewsets.ModelViewSet):
     queryset = TechnicianAssistant.objects.select_related("technician").all()
     serializer_class = TechnicianAssistantSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdminOrReadOnly]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -394,7 +544,7 @@ class TechnicianAssistantViewSet(viewsets.ModelViewSet):
 class TechnicianServiceViewSet(viewsets.ModelViewSet):
     queryset = TechnicianService.objects.select_related("technician").all()
     serializer_class = TechnicianServiceSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdminOrReadOnly]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -405,12 +555,19 @@ class TechnicianServiceViewSet(viewsets.ModelViewSet):
 class TechnicianRecommendationViewSet(viewsets.ModelViewSet):
     queryset = TechnicianRecommendation.objects.select_related("technician").all()
     serializer_class = TechnicianRecommendationSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdminOrReadOnly]
 
     def get_queryset(self):
         qs = super().get_queryset()
         technician = self.request.query_params.get("technician")
-        return qs.filter(technician_id=technician) if technician else qs
+        if technician:
+            qs = qs.filter(technician_id=technician)
+        completion = self.request.query_params.get("status")
+        if completion == "pending":
+            qs = qs.filter(is_completed=False)
+        elif completion == "completed":
+            qs = qs.filter(is_completed=True)
+        return qs
 
 
 # ============================================================================
@@ -452,6 +609,12 @@ class DashboardStatsView(APIView):
             date_reported=timezone.now().date(),
         ).count()
 
+        bought_items = RequisitionItem.objects.filter(
+            requisition__status="Bought", is_approved=True
+        )
+        total_items_bought = bought_items.count()
+        total_value_bought = sum((item.total_price for item in bought_items), 0)
+
         category_distribution = Category.objects.annotate(
             asset_count=Count("assets", filter=Q(assets__is_deleted=False))
         ).values("name", "asset_count")
@@ -477,6 +640,8 @@ class DashboardStatsView(APIView):
             "status_counts": status_counts,
             "assets_this_month": assets_this_month,
             "maintenance_today": maintenance_today,
+            "total_items_bought": total_items_bought,
+            "total_value_bought": total_value_bought,
             "categories": list(category_distribution),
             "recent_activity": recent_data,
         }
@@ -493,6 +658,8 @@ class AssetQuantitiesView(APIView):
             available=Count("assets", filter=Q(assets__is_deleted=False, assets__status__name__iexact="Available")),
             in_use=Count("assets", filter=Q(assets__is_deleted=False, assets__status__name__iexact="In Use")),
             maintenance=Count("assets", filter=Q(assets__is_deleted=False, assets__status__name__icontains="Maintenance")),
+            missing=Count("assets", filter=Q(assets__is_deleted=False, assets__status__name__iexact="Missing")),
+            retired=Count("assets", filter=Q(assets__is_deleted=False, assets__status__name__iexact="Retired")),
         ).order_by("name")
         return Response([
             {
@@ -502,9 +669,63 @@ class AssetQuantitiesView(APIView):
                 "available": category.available,
                 "in_use": category.in_use,
                 "maintenance": category.maintenance,
+                "missing": category.missing,
+                "retired": category.retired,
             }
             for category in categories
         ])
+
+
+class SystemAlertsView(APIView):
+    """Legacy notifications hub, exposed as structured API data."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        today = timezone.now().date()
+        alerts = []
+
+        def add(level, category, title, message, href, timestamp):
+            alerts.append({
+                "id": f"{category.lower()}-{len(alerts) + 1}",
+                "level": level,
+                "category": category,
+                "title": title,
+                "message": message,
+                "href": href,
+                "timestamp": timestamp,
+            })
+
+        for issue in Issue.objects.filter(priority__in=["Critical", "High"], status__in=["Open", "Monitoring"]).order_by("-created_at"):
+            age = (today - issue.created_at.date()).days
+            add("danger" if issue.priority == "Critical" else "warning", "Issues", f"{issue.priority} Issue: {issue.title}", f"Status: {issue.status} · Open for {age} day{'s' if age != 1 else ''}", f"/issues/{issue.pk}", issue.created_at)
+
+        for req in Requisition.objects.filter(status="Pending", created_at__date__lte=today - timedelta(days=7)).order_by("created_at"):
+            age = (today - req.created_at.date()).days
+            add("warning", "Requisitions", f"Stale Requisition: {req.req_no} — {req.title}", f"Pending for {age} days · Company: {req.company}", f"/requisitions/{req.pk}", req.created_at)
+
+        for req in Requisition.objects.filter(status="Bought").prefetch_related("items"):
+            count = sum(1 for item in req.items.all() if item.is_approved and not item.is_processed)
+            if count:
+                add("info", "Requisitions", f"Bought Req has unprocessed items: {req.req_no}", f"{count} item(s) not yet added to assets · {req.title}", f"/requisitions/{req.pk}", req.updated_at)
+
+        for log in MaintenanceLog.objects.filter(maintenance_status="Open", date_reported__lte=today - timedelta(days=14)).select_related("asset").order_by("date_reported"):
+            age = (today - log.date_reported).days
+            add("warning", "Maintenance", f"Long maintenance: {log.asset.asset_id} — {log.asset.model_description}", f"Under maintenance for {age} days · Reported: {log.date_reported:%d %b %Y}", f"/maintenance/{log.pk}", log.timestamp)
+
+        for asset in Asset.objects.filter(is_deleted=False, status__name="Missing").select_related("category").order_by("-updated_at"):
+            add("danger", "Assets", f"Missing Asset: {asset.asset_id} — {asset.model_description}", f"Category: {asset.category.name}", f"/assets/{asset.pk}", asset.updated_at)
+
+        for project in Project.objects.filter(status="Pending", created_at__date__lte=today - timedelta(days=30)).order_by("created_at"):
+            age = (today - project.created_at.date()).days
+            add("info", "Projects", f"Stale Project: {project.title}", f"Pending for {age} days · Priority: {project.priority}", f"/projects/{project.pk}", project.created_at)
+
+        severity = {"danger": 0, "warning": 1, "info": 2}
+        alerts.sort(key=lambda item: (severity[item["level"]], -item["timestamp"].timestamp()))
+        return Response({
+            "count": len(alerts),
+            "counts": {level: sum(1 for item in alerts if item["level"] == level) for level in severity},
+            "results": alerts,
+        })
 
 # Current User View
 class CurrentUserView(APIView):
@@ -528,6 +749,7 @@ class CurrentUserView(APIView):
                 'department': profile.department.name if profile and profile.department else None,
                 'phone_number': profile.phone_number if profile else '',
                 'employee_id': profile.employee_id if profile else '',
+                'must_change_password': profile.needs_password_change() if profile else False,
             } if profile else None,
         }
 
@@ -564,7 +786,9 @@ class ChangePasswordView(APIView):
 
     def post(self, request):
         user = request.user
-        if not user.check_password(request.data.get("current_password", "")):
+        profile = UserProfile.objects.filter(user=user).first()
+        forced = bool(profile and profile.needs_password_change())
+        if not forced and not user.check_password(request.data.get("current_password", "")):
             return Response({"current_password": ["The current password is incorrect."]}, status=status.HTTP_400_BAD_REQUEST)
         new_password = request.data.get("new_password", "")
         try:
@@ -597,6 +821,17 @@ class PersonViewSet(viewsets.ModelViewSet):
         department = self.request.query_params.get('department')
         return qs.filter(department_id=department) if department else qs
 
+    @transaction.atomic
+    def perform_destroy(self, instance):
+        available = StatusOption.objects.filter(name="Available").first()
+        for asset in Asset.objects.filter(assigned_to=instance, is_deleted=False):
+            AssignmentHistory.objects.filter(asset=asset, end_date__isnull=True).update(end_date=timezone.now())
+            asset.assigned_to = None
+            if available:
+                asset.status = available
+            asset.save()
+        instance.delete()
+
 
 # Issues
 from issues.models import Issue, IssueComment, Project, ProjectItem, ProjectComment
@@ -618,17 +853,30 @@ class IssueCommentSerializer(serializers.ModelSerializer):
 class IssueViewSet(viewsets.ModelViewSet):
     queryset = Issue.objects.select_related('asset', 'department', 'reported_by').order_by('-created_at')
     serializer_class = IssueSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdminOrReadOnly]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['title', 'description']
 
     def perform_create(self, serializer):
         serializer.save(reported_by=self.request.user)
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request.query_params.get("priority"):
+            qs = qs.filter(priority=self.request.query_params["priority"])
+        if self.request.query_params.get("status"):
+            qs = qs.filter(status=self.request.query_params["status"])
+        return qs
+
+    def perform_update(self, serializer):
+        if serializer.instance.status == "Closed":
+            raise ValidationError({"detail": "Closed issues cannot be edited."})
+        serializer.save()
+
 class IssueCommentViewSet(viewsets.ModelViewSet):
     queryset = IssueComment.objects.select_related('author').order_by('created_at')
     serializer_class = IssueCommentSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdminOrReadOnly]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -645,9 +893,37 @@ class IssueCommentViewSet(viewsets.ModelViewSet):
 class ProjectSerializer(serializers.ModelSerializer):
     reported_by_username = serializers.CharField(source='reported_by.username', read_only=True, default=None)
     comments_count = serializers.IntegerField(source='comments.count', read_only=True)
+    category_availability = serializers.SerializerMethodField()
     class Meta:
         model = Project
         fields = '__all__'
+
+    def validate(self, attrs):
+        status_value = attrs.get("status", getattr(self.instance, "status", None))
+        rejected_reason = attrs.get("rejected_reason", getattr(self.instance, "rejected_reason", ""))
+        if status_value == "Rejected" and not rejected_reason:
+            raise serializers.ValidationError({"rejected_reason": "A reason is required when rejecting a project."})
+        return attrs
+
+    def get_category_availability(self, obj):
+        if getattr(self.context.get("view"), "action", None) != "retrieve":
+            return []
+        result = []
+        for category in obj.categories.all():
+            assets = Asset.objects.filter(category=category, is_deleted=False).select_related("status", "assigned_to", "department").order_by("status__name", "asset_id")
+            result.append({
+                "category": {"id": category.id, "name": category.name},
+                "available_count": sum(1 for asset in assets if asset.status and asset.status.name == "Available"),
+                "assets": [{
+                    "id": asset.id,
+                    "asset_id": asset.asset_id,
+                    "model_description": asset.model_description,
+                    "status": asset.status.name if asset.status else "Unknown",
+                    "assigned_to": asset.assigned_to.full_name if asset.assigned_to else None,
+                    "department": asset.department.name if asset.department else None,
+                } for asset in assets],
+            })
+        return result
 
 class ProjectItemSerializer(serializers.ModelSerializer):
     total_price = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
@@ -664,17 +940,31 @@ class ProjectCommentSerializer(serializers.ModelSerializer):
 class ProjectViewSet(viewsets.ModelViewSet):
     queryset = Project.objects.select_related('reported_by').order_by('-created_at')
     serializer_class = ProjectSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    filter_backends = [filters.SearchFilter]
+    permission_classes = [IsAdminOrReadOnly]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['title', 'description']
+    ordering_fields = ['created_at', 'date', 'priority', 'status', 'title']
 
     def perform_create(self, serializer):
         serializer.save(reported_by=self.request.user)
 
+    def get_queryset(self):
+        qs = super().get_queryset().prefetch_related("categories")
+        if self.request.query_params.get("priority"):
+            qs = qs.filter(priority=self.request.query_params["priority"])
+        if self.request.query_params.get("status"):
+            qs = qs.filter(status=self.request.query_params["status"])
+        return qs
+
+    def perform_update(self, serializer):
+        if serializer.instance.status == "Done":
+            raise ValidationError({"detail": "Completed projects cannot be edited."})
+        serializer.save()
+
 class ProjectItemViewSet(viewsets.ModelViewSet):
     queryset = ProjectItem.objects.all()
     serializer_class = ProjectItemSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdminOrReadOnly]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -686,7 +976,7 @@ class ProjectItemViewSet(viewsets.ModelViewSet):
 class ProjectCommentViewSet(viewsets.ModelViewSet):
     queryset = ProjectComment.objects.select_related('author').order_by('created_at')
     serializer_class = ProjectCommentSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdminOrReadOnly]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -707,29 +997,73 @@ class RequisitionItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = RequisitionItem
         fields = '__all__'
+        extra_kwargs = {"requisition": {"required": False}}
 
 class RequisitionSerializer(serializers.ModelSerializer):
-    items = RequisitionItemSerializer(many=True, read_only=True)
+    items = RequisitionItemSerializer(many=True, required=False)
     created_by_username = serializers.CharField(source='created_by.username', read_only=True, default=None)
     total_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
     class Meta:
         model = Requisition
         fields = '__all__'
 
+    def validate(self, attrs):
+        issue = attrs.get("linked_issue")
+        project = attrs.get("linked_project")
+        if issue and issue.status == "Closed":
+            raise serializers.ValidationError({"linked_issue": "Closed issues cannot be linked."})
+        if project and project.status == "Done":
+            raise serializers.ValidationError({"linked_project": "Completed projects cannot be linked."})
+        return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        items = validated_data.pop("items", [])
+        requisition = super().create(validated_data)
+        for item in items:
+            RequisitionItem.objects.create(requisition=requisition, **item)
+        return requisition
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        items = validated_data.pop("items", None)
+        instance = super().update(instance, validated_data)
+        if items is not None:
+            instance.items.all().delete()
+            for item in items:
+                RequisitionItem.objects.create(requisition=instance, **item)
+        return instance
+
 class RequisitionViewSet(viewsets.ModelViewSet):
     queryset = Requisition.objects.select_related('created_by', 'linked_issue', 'linked_project').prefetch_related('items').order_by('-created_at')
     serializer_class = RequisitionSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdminOrReadOnly]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['req_no', 'title']
+    ordering_fields = ['req_no', 'title', 'status', 'created_by__username', 'created_at']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        requisition_status = self.request.query_params.get("status")
+        return qs.filter(status=requisition_status) if requisition_status else qs
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
+    def perform_update(self, serializer):
+        if serializer.instance.status == "Bought":
+            raise ValidationError({"detail": "Bought requisitions are locked and can only be changed in Django admin."})
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if instance.status == "Bought":
+            raise ValidationError({"detail": "Bought requisitions are locked and can only be changed in Django admin."})
+        instance.delete()
+
 class RequisitionItemViewSet(viewsets.ModelViewSet):
     queryset = RequisitionItem.objects.all()
     serializer_class = RequisitionItemSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdminOrReadOnly]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -742,6 +1076,18 @@ class RequisitionItemViewSet(viewsets.ModelViewSet):
         if self.request.query_params.get('bought_queue') == 'true':
             qs = qs.filter(requisition__status='Bought', is_approved=True, item_type='Asset', is_processed=False)
         return qs
+
+    def _ensure_unlocked(self, instance):
+        if instance.requisition.status == "Bought":
+            raise ValidationError({"detail": "Items on a Bought requisition are locked."})
+
+    def perform_update(self, serializer):
+        self._ensure_unlocked(serializer.instance)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._ensure_unlocked(instance)
+        instance.delete()
 
     @action(detail=True, methods=['post'])
     def process(self, request, pk=None):
@@ -790,6 +1136,14 @@ class TaskViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request.query_params.get("status"):
+            qs = qs.filter(status=self.request.query_params["status"])
+        if self.request.query_params.get("priority"):
+            qs = qs.filter(priority=self.request.query_params["priority"])
+        return qs
+
 
 # Notifications (uses dashboard Notification model)
 from dashboard.models import Notification
@@ -809,27 +1163,114 @@ class NotificationViewSet(viewsets.ModelViewSet):
 
 # Asset Links
 class AssetLinkSerializer(serializers.ModelSerializer):
+    linked_asset = serializers.PrimaryKeyRelatedField(queryset=Asset.objects.filter(is_deleted=False), required=False)
+    linked_asset_ids = serializers.PrimaryKeyRelatedField(queryset=Asset.objects.filter(is_deleted=False), many=True, write_only=True, required=False)
     asset_display = serializers.CharField(source='asset.asset_id', read_only=True)
     linked_asset_display = serializers.CharField(source='linked_asset.asset_id', read_only=True)
     class Meta:
         model = AssetLink
         fields = '__all__'
         read_only_fields = ['created_by', 'created_at']
+        validators = []
 
     def validate(self, attrs):
-        if attrs.get('asset') == attrs.get('linked_asset'):
+        targets = list(attrs.get("linked_asset_ids", []))
+        if attrs.get("linked_asset"):
+            targets.append(attrs["linked_asset"])
+        if not targets:
+            raise serializers.ValidationError({"linked_asset_ids": "Select at least one asset to link."})
+        if attrs.get('asset') in targets:
             raise serializers.ValidationError({'linked_asset': 'An asset cannot be linked to itself.'})
         return attrs
 
 class AssetLinkViewSet(viewsets.ModelViewSet):
     queryset = AssetLink.objects.select_related('asset', 'linked_asset').all()
     serializer_class = AssetLinkSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAdminOrReadOnly]
 
     def get_queryset(self):
         qs = super().get_queryset()
         asset_id = self.request.query_params.get('asset')
         return qs.filter(Q(asset_id=asset_id) | Q(linked_asset_id=asset_id)) if asset_id else qs
 
+    @staticmethod
+    def _chain(asset):
+        visited = {asset.pk}
+        pending = [asset.pk]
+        while pending:
+            linked_ids = AssetLink.objects.filter(asset_id=pending.pop()).values_list("linked_asset_id", flat=True)
+            for linked_id in linked_ids:
+                if linked_id not in visited:
+                    visited.add(linked_id)
+                    pending.append(linked_id)
+        return visited
+
+    @transaction.atomic
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        asset = serializer.validated_data["asset"]
+        targets = list(serializer.validated_data.pop("linked_asset_ids", []))
+        if serializer.validated_data.get("linked_asset"):
+            targets.append(serializer.validated_data["linked_asset"])
+        notes = serializer.validated_data.get("notes", "")
+        first = None
+        combined = self._chain(asset)
+        for linked_asset in targets:
+            chain_a = self._chain(asset)
+            chain_b = self._chain(linked_asset)
+            combined |= chain_a | chain_b
+            for source_id in chain_a:
+                for target_id in chain_b:
+                    if source_id == target_id:
+                        continue
+                    forward, _ = AssetLink.objects.get_or_create(asset_id=source_id, linked_asset_id=target_id, defaults={"notes": notes, "created_by": self.request.user})
+                    AssetLink.objects.get_or_create(asset_id=target_id, linked_asset_id=source_id, defaults={"notes": notes, "created_by": self.request.user})
+                    if first is None:
+                        first = forward
+
+        eligible = list(Asset.objects.filter(pk__in=combined).select_related("status", "assigned_to", "department"))
+        eligible = [item for item in eligible if item.status and item.status.name not in {"Missing", "Retired", "Under Maintenance"}]
+        assignees = {item.assigned_to_id for item in eligible if item.assigned_to_id}
+        if len(assignees) <= 1:
+            if asset.assigned_to_id and asset in eligible:
+                in_use = StatusOption.objects.filter(name="In Use").first()
+                for item in eligible:
+                    if item.pk != asset.pk:
+                        Asset.objects.filter(pk=item.pk).update(assigned_to=asset.assigned_to, department=asset.department, status=in_use or item.status)
+            elif asset.department_id and not asset.assigned_to_id:
+                Asset.objects.filter(pk__in=[item.pk for item in eligible if item.pk != asset.pk]).update(department=asset.department)
+        serializer.instance = first
+
+    @transaction.atomic
+    def perform_destroy(self, instance):
+        reverse = AssetLink.objects.filter(asset=instance.linked_asset, linked_asset=instance.asset).first()
+        linked_at = instance.created_at
+        for source, target in ((instance.asset, instance.linked_asset), (instance.linked_asset, instance.asset)):
+            AssetLinkHistory.objects.create(asset=source, linked_asset=target, notes=instance.notes, linked_at=linked_at, unlinked_by=self.request.user)
+        if reverse:
+            reverse.delete()
+        instance.delete()
+
+
+class AssetLinkHistorySerializer(serializers.ModelSerializer):
+    asset_display = serializers.CharField(source="asset.asset_id", read_only=True)
+    linked_asset_display = serializers.CharField(source="linked_asset.asset_id", read_only=True)
+    unlinked_by_username = serializers.CharField(source="unlinked_by.username", read_only=True, default=None)
+
+    class Meta:
+        model = AssetLinkHistory
+        fields = "__all__"
+
+
+class AssetLinkHistoryViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = AssetLinkHistorySerializer
+    permission_classes = [permissions.IsAuthenticated]
+    queryset = AssetLinkHistory.objects.select_related("asset", "linked_asset", "unlinked_by").order_by("-unlinked_at")
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        asset = self.request.query_params.get("asset")
+        if asset:
+            qs = qs.filter(Q(asset_id=asset) | Q(linked_asset_id=asset))
+        if self.request.query_params.get("recent") == "true":
+            qs = qs.filter(unlinked_at__gte=timezone.now() - timedelta(days=30))
+        return qs

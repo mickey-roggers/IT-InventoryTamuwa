@@ -1,7 +1,7 @@
 "use client"
 
 import useSWR from "swr"
-import { Activity, Boxes, CalendarPlus, Wrench } from "lucide-react"
+import { Activity, Banknote, Boxes, CalendarPlus, ShoppingCart, Wrench } from "lucide-react"
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 
 import { PageHeader } from "@/components/page-header"
@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { apiFetch } from "@/lib/api"
 import { formatDate } from "@/lib/format"
+import { formatCurrency } from "@/lib/format"
 import type { DashboardStats } from "@/lib/types"
 
 const chartColors = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"]
@@ -24,14 +25,16 @@ export default function DashboardPage() {
     { label: "In use", value: inUse, note: "Currently assigned and active", icon: Activity, tone: "bg-emerald-100 text-emerald-700" },
     { label: "Added this month", value: data?.assets_this_month ?? 0, note: "New inventory records", icon: CalendarPlus, tone: "bg-blue-100 text-blue-700" },
     { label: "Maintenance today", value: data?.maintenance_today ?? 0, note: "Open reports logged today", icon: Wrench, tone: "bg-amber-100 text-amber-700" },
+    { label: "Items bought", value: data?.total_items_bought ?? 0, note: "Approved items on bought requisitions", icon: ShoppingCart, tone: "bg-violet-100 text-violet-700" },
+    { label: "Value bought", value: formatCurrency(data?.total_value_bought ?? 0), note: "Approved procurement value", icon: Banknote, tone: "bg-teal-100 text-teal-700" },
   ]
 
   return (
     <>
       <PageHeader eyebrow="Command centre" title="Operations overview" description="A live view of inventory health, movement, and maintenance activity." />
       {error ? <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">Dashboard data is unavailable. Confirm that the Django server is running.</div> : null}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {stats.map((stat) => <Card key={stat.label} className="border-border/70 shadow-sm"><CardContent className="p-5"><div className="flex items-start justify-between"><div><p className="text-sm text-muted-foreground">{stat.label}</p>{isLoading ? <Skeleton className="mt-3 h-9 w-16" /> : <p className="mt-2 font-mono text-3xl font-semibold tracking-tight">{stat.value.toLocaleString()}</p>}</div><span className={`grid size-10 place-items-center rounded-xl ${stat.tone}`}><stat.icon className="size-5" /></span></div><p className="mt-4 text-xs text-muted-foreground">{stat.note}</p></CardContent></Card>)}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {stats.map((stat) => <Card key={stat.label} className="border-border/70 shadow-sm"><CardContent className="p-5"><div className="flex items-start justify-between"><div><p className="text-sm text-muted-foreground">{stat.label}</p>{isLoading ? <Skeleton className="mt-3 h-9 w-16" /> : <p className="mt-2 font-mono text-3xl font-semibold tracking-tight">{typeof stat.value === "number" ? stat.value.toLocaleString() : stat.value}</p>}</div><span className={`grid size-10 place-items-center rounded-xl ${stat.tone}`}><stat.icon className="size-5" /></span></div><p className="mt-4 text-xs text-muted-foreground">{stat.note}</p></CardContent></Card>)}
       </div>
       <div className="mt-4 grid gap-4 xl:grid-cols-2">
         <Card className="border-border/70 shadow-sm"><CardHeader><CardTitle className="text-base">Asset status</CardTitle></CardHeader><CardContent className="h-72">{isLoading ? <Skeleton className="h-full" /> : statusData.length ? <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={statusData} dataKey="value" nameKey="name" innerRadius={62} outerRadius={92} paddingAngle={3}>{statusData.map((item, index) => <Cell key={item.name} fill={chartColors[index % chartColors.length]} />)}</Pie><Tooltip /></PieChart></ResponsiveContainer> : <EmptyChart />}</CardContent></Card>

@@ -18,6 +18,7 @@ import {
   Menu,
   PackageSearch,
   ShoppingCart,
+  Settings,
   ShieldCheck,
   TicketCheck,
   UserCog,
@@ -40,10 +41,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
-import { apiFetch, unpackResults } from "@/lib/api"
+import { apiFetch } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
-const navigation = [
+type NavigationItem = { href: string; label: string; icon: typeof Gauge; adminOnly?: boolean; external?: boolean }
+
+const navigation: NavigationItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: Gauge },
   { href: "/assets", label: "Assets", icon: Boxes },
   { href: "/asset-links", label: "Asset Links", icon: Link2 },
@@ -60,6 +63,7 @@ const navigation = [
   { href: "/profile", label: "Profile", icon: UserRound },
   { href: "/notifications", label: "Notifications", icon: Bell },
   { href: "/users", label: "User Management", icon: UserCog, adminOnly: true },
+  { href: `${process.env.NEXT_PUBLIC_DJANGO_URL || "https://ict-inventory.up.railway.app"}/admin/`, label: "Admin Panel", icon: Settings, adminOnly: true, external: true },
   { href: "/activity", label: "Activity", icon: History },
 ]
 
@@ -90,6 +94,7 @@ function Navigation({ close }: { close?: () => void }) {
     <nav className="mt-8 space-y-1">
       {visibleNavigation.map((item) => {
         const active = activeHref === item.href
+        if (item.external) return <a key={item.href} href={item.href} target="_blank" rel="noreferrer" onClick={close} className="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-sidebar-foreground/65 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"><item.icon className="size-4" />{item.label}</a>
         return (
           <Link
             key={item.href}
@@ -129,8 +134,8 @@ function Sidebar() {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth()
   const isAdmin = Boolean(user?.is_staff || user?.is_superuser || user?.profile?.role === "admin" || user?.profile?.role === "super_admin")
-  const { data: notifications } = useSWR("notifications/?page_size=50", apiFetch)
-  const unread = unpackResults<{ is_read: boolean }>(notifications as never).filter((item) => !item.is_read).length
+  const { data: notifications } = useSWR<{ count: number }>("system-alerts/", apiFetch)
+  const unread = notifications?.count || 0
   const initials = `${user?.first_name?.[0] ?? ""}${user?.last_name?.[0] ?? user?.username?.[0] ?? "U"}`.toUpperCase()
 
   return (

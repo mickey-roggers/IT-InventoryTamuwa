@@ -9,13 +9,14 @@ import { StatusBadge } from "@/components/status-badge"
 import { Button } from "@/components/ui/button"
 import { apiFetch, unpackResults } from "@/lib/api"
 import { formatCurrency, formatDate } from "@/lib/format"
-import type { Asset, Category, Department, Paginated, Person, StatusOption } from "@/lib/types"
+import type { Asset, Category, Department, Paginated, Person, Requisition, StatusOption } from "@/lib/types"
 
 export default function AssetsPage() {
   const { data: categories } = useSWR<Paginated<Category> | Category[]>("categories/?page_size=100", apiFetch)
   const { data: statuses } = useSWR<Paginated<StatusOption> | StatusOption[]>("status-options/?page_size=100", apiFetch)
   const { data: people } = useSWR<Paginated<Person> | Person[]>("people/?page_size=100", apiFetch)
   const { data: departments } = useSWR<Paginated<Department> | Department[]>("departments/?page_size=100", apiFetch)
+  const { data: requisitions } = useSWR<Paginated<Requisition> | Requisition[]>("requisitions/?page_size=200", apiFetch)
 
   return <ResourcePage<Asset>
     eyebrow="Inventory"
@@ -25,8 +26,15 @@ export default function AssetsPage() {
     searchPlaceholder="Search asset ID, serial number, model, or assignee…"
     emptyMessage="Add the first asset to begin tracking inventory."
     rowHref={(item) => `/assets/${item.id}`}
-    create={{ title: "New asset", description: "Register a device in the inventory.", buttonLabel: "Add asset", fields: [
-      { name: "asset_id", label: "Asset ID", required: true, placeholder: "e.g. TAM-LAP-0142" },
+    exportUrl="assets/export/"
+    filters={[
+      { name: "category", label: "Categories", options: unpackResults(categories).map((item) => ({ label: item.name, value: String(item.id) })) },
+      { name: "status", label: "Statuses", options: unpackResults(statuses).map((item) => ({ label: item.name, value: String(item.id) })) },
+      { name: "assigned", label: "Assignment", options: [{ label: "Assigned", value: "assigned" }, { label: "Unassigned", value: "unassigned" }] },
+    ]}
+    ordering={[{ label: "Newest", value: "-created_at" }, { label: "Asset ID A–Z", value: "asset_id" }, { label: "Asset ID Z–A", value: "-asset_id" }, { label: "Category", value: "category__name" }, { label: "Model", value: "model_description" }, { label: "Purchase cost", value: "-purchase_cost" }, { label: "Purchase date", value: "-purchase_date" }, { label: "Status", value: "status__name" }, { label: "Vendor", value: "purchased_from" }]}
+    create={{ title: "New asset", description: "Register a device in the inventory.", buttonLabel: "Add asset", adminOnly: true, fields: [
+      { name: "asset_id", label: "Asset ID (optional)", placeholder: "Leave blank to generate from category code", helpText: "Generated automatically when left blank." },
       { name: "serial_number", label: "Serial number", required: true },
       { name: "model_description", label: "Model / description", required: true },
       { name: "category_id", label: "Category", type: "select", required: true, options: unpackResults(categories).map((item) => ({ label: item.name, value: String(item.id) })) },
@@ -36,6 +44,7 @@ export default function AssetsPage() {
       { name: "purchase_date", label: "Purchase date", type: "date" },
       { name: "purchased_from", label: "Vendor" },
       { name: "purchase_cost", label: "Purchase cost (KES)", type: "number" },
+      { name: "requisition", label: "Requisition", type: "select", options: unpackResults(requisitions).map((item) => ({ label: `${item.req_no} · ${item.title}`, value: String(item.id) })) },
       { name: "admin_comments", label: "Notes", type: "textarea" },
     ] }}
     columns={[

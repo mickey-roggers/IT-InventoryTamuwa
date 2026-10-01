@@ -23,6 +23,7 @@ export default function UsersPage() {
     searchPlaceholder="Search users, email, or employee ID…"
     emptyMessage="No user accounts are available."
     rowHref={(item) => `/users/${item.id}`}
+    filters={[{ name: "role", label: "Roles", options: [["super_admin", "Super admin"], ["admin", "Admin"], ["technician", "Technician"], ["viewer", "Viewer"]].map(([value, label]) => ({ value, label })) }]}
     create={{ title: "New user", description: "Create an account with a temporary password.", buttonLabel: "Add user", fields: [
       { name: "username", label: "Username", required: true },
       { name: "password", label: "Temporary password", type: "password", required: true },

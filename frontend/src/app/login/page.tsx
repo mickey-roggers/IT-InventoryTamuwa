@@ -30,7 +30,8 @@ export default function LoginPage() {
       setLoading(false)
       return
     }
-    router.replace("/dashboard")
+    const session = await fetch("/api/auth/session", { cache: "no-store" }).then((value) => value.json()).catch(() => null)
+    router.replace(session?.profile?.must_change_password ? "/profile" : "/dashboard")
     router.refresh()
   }
 

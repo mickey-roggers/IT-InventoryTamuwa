@@ -95,5 +95,14 @@ class MaintenanceLogSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["timestamp", "created_at", "updated_at"]
+        read_only_fields = ["created_at", "updated_at"]
+
+    def validate(self, attrs):
+        reported = attrs.get("date_reported", getattr(self.instance, "date_reported", None))
+        completed = attrs.get("date_completed", getattr(self.instance, "date_completed", None))
+        if reported and completed and completed < reported:
+            raise serializers.ValidationError({
+                "date_completed": "Date completed cannot be before date reported."
+            })
+        return attrs
 

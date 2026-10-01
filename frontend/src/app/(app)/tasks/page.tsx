@@ -14,6 +14,8 @@ export default function TasksPage() {
   const { data: users } = useSWR<Paginated<UserSummary> | UserSummary[]>("users/?page_size=100", apiFetch)
   return <ResourcePage<Task> eyebrow="Work queue" title="Tasks" description="Keep operational follow-ups visible, assigned, and on schedule." endpoint="tasks/" searchPlaceholder="Search tasks…" emptyMessage="No work is queued right now."
     rowHref={(item) => `/tasks/${item.id}`}
+    filters={[{ name: "priority", label: "Priorities", options: ["Low", "Medium", "High", "Critical"].map((value) => ({ label: value, value })) }, { name: "status", label: "Statuses", options: ["To Do", "In Progress", "Done"].map((value) => ({ label: value, value })) }]}
+    ordering={[{ label: "Newest", value: "-created_at" }, { label: "Oldest", value: "created_at" }, { label: "Due soonest", value: "due_date" }, { label: "Due latest", value: "-due_date" }, { label: "Priority", value: "priority" }, { label: "Status", value: "status" }]}
     create={{ title: "New task", description: "Add a task to the shared ICT work queue.", buttonLabel: "Add task", fields: [
       { name: "title", label: "Title", required: true },
       { name: "assigned_to", label: "Assignee", type: "select", options: unpackResults(users).map((item) => ({ label: `${item.first_name} ${item.last_name}`.trim() || item.username, value: String(item.id) })) },

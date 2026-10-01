@@ -2,7 +2,7 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from assets.models import Asset, Category, Department, StatusOption
+from assets.models import Asset, AssetLink, Category, Department, StatusOption
 from requisition.models import Requisition, RequisitionItem
 from technicians.models import Technician
 from users.models import UserProfile
@@ -140,6 +140,13 @@ class ExtendedApiTests(TestCase):
     def test_technician_related_records_are_manageable(self):
         technician = Technician.objects.create(company_name="Repairs Ltd", technician_name="Jane")
         self.client.force_authenticate(self.viewer)
+        denied = self.client.post(
+            "/api/technician-assistants/",
+            {"technician": technician.pk, "name": "Blocked", "is_active": True},
+            format="json",
+        )
+        self.assertEqual(denied.status_code, 403)
+        self.client.force_authenticate(self.admin)
         assistant = self.client.post(
             "/api/technician-assistants/",
             {"technician": technician.pk, "name": "Alex", "is_active": True},
@@ -167,3 +174,50 @@ class ExtendedApiTests(TestCase):
         detail = self.client.get(f"/api/technicians/{technician.pk}/")
         self.assertEqual(len(detail.data["assistants"]), 1)
         self.assertEqual(len(detail.data["services"]), 1)
+
+    def test_asset_linking_accepts_multiple_assets_and_builds_complete_chain(self):
+        category = Category.objects.create(name="Dock", short_code="DCK")
+        available = StatusOption.objects.create(name="Available")
+        assets = [
+            Asset.objects.create(
+                asset_id=f"DCK-00{index}", category=category,
+                model_description=f"Dock {index}", serial_number=f"DCK-SER-{index}",
+                status=available, created_by=self.admin, updated_by=self.admin,
+            )
+            for index in range(1, 4)
+        ]
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(
+            "/api/asset-links/",
+            {"asset": assets[0].pk, "linked_asset_ids": [assets[1].pk, assets[2].pk]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(AssetLink.objects.count(), 6)
+
+    def test_creating_asset_from_bought_queue_generates_id_and_reduces_quantity(self):
+        category = Category.objects.create(name="Laptop", short_code="LAP")
+        available = StatusOption.objects.create(name="Available")
+        requisition = Requisition.objects.create(
+            req_no="REQ-QUEUE", company="Tamuwa", title="Laptops", status="Bought", created_by=self.admin
+        )
+        item = RequisitionItem.objects.create(
+            requisition=requisition, item_type="Asset", item_name="Laptop",
+            unit_price="50000", quantity=2, is_approved=True,
+        )
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(
+            "/api/assets/",
+            {
+                "asset_id": "", "category_id": category.pk,
+                "model_description": "Queue laptop", "serial_number": "QUEUE-SER-1",
+                "status_id": available.pk, "requisition_item_id": item.pk,
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["asset_id"], "LAP-001")
+        self.assertEqual(response.data["requisition"], requisition.pk)
+        item.refresh_from_db()
+        self.assertEqual(item.quantity, 1)
+        self.assertFalse(item.is_processed)

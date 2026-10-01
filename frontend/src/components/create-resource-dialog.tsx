@@ -35,6 +35,7 @@ type ResourceFormDialogProps = {
   buttonLabel?: string
   trigger?: ReactNode
   fixedValues?: Record<string, unknown>
+  transformPayload?: (payload: Record<string, unknown>) => Record<string, unknown>
 }
 
 function stringValue(value: FieldValue | undefined) {
@@ -42,7 +43,7 @@ function stringValue(value: FieldValue | undefined) {
   return String(value)
 }
 
-export function ResourceFormDialog({ title, description, endpoint, fields, onSaved, method = "POST", buttonLabel, trigger, fixedValues }: ResourceFormDialogProps) {
+export function ResourceFormDialog({ title, description, endpoint, fields, onSaved, method = "POST", buttonLabel, trigger, fixedValues, transformPayload }: ResourceFormDialogProps) {
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
@@ -71,7 +72,7 @@ export function ResourceFormDialog({ title, description, endpoint, fields, onSav
       else if (method !== "POST") payload[field.name] = field.nullable ? null : ""
     })
     try {
-      await apiFetch(endpoint, { method, body: JSON.stringify(payload) })
+      await apiFetch(endpoint, { method, body: JSON.stringify(transformPayload ? transformPayload(payload) : payload) })
       setOpen(false)
       onSaved()
     } catch (value) {
@@ -108,7 +109,7 @@ export function ResourceFormDialog({ title, description, endpoint, fields, onSav
                           <SelectContent>{field.nullable && <SelectItem value="__none__">None</SelectItem>}{field.options?.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
                         </Select>
                       ) : field.type === "multiselect" ? (
-                        <select id={field.name} name={field.name} multiple defaultValue={(field.defaultValue as Array<string | number> | undefined)?.map(String)} className="min-h-32 w-full rounded-lg border bg-background px-3 py-2 text-sm">
+                        <select id={field.name} name={field.name} multiple required={field.required} defaultValue={(field.defaultValue as Array<string | number> | undefined)?.map(String)} className="min-h-32 w-full rounded-lg border bg-background px-3 py-2 text-sm">
                           {field.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                         </select>
                       ) : (

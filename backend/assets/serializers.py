@@ -1,4 +1,5 @@
 from django.contrib.auth.models import User
+from django.utils import timezone
 from rest_framework import serializers
 
 from .models import (
@@ -27,7 +28,7 @@ class DepartmentSerializer(serializers.ModelSerializer):
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = Category
-        fields = ["id", "name", "description", "created_at", "updated_at"]
+        fields = ["id", "name", "short_code", "description", "created_at", "updated_at"]
 
 
 class StatusOptionSerializer(serializers.ModelSerializer):
@@ -43,6 +44,8 @@ class PersonSerializer(serializers.ModelSerializer):
 
 
 class AssetSerializer(serializers.ModelSerializer):
+    asset_id = serializers.CharField(required=False, allow_blank=True)
+    requisition_item_id = serializers.IntegerField(write_only=True, required=False)
     category = CategorySerializer(read_only=True)
     category_id = serializers.PrimaryKeyRelatedField(
         queryset=Category.objects.all(), source="category", write_only=True
@@ -75,6 +78,7 @@ class AssetSerializer(serializers.ModelSerializer):
         allow_null=True,
         required=False,
     )
+    requisition_display = serializers.CharField(source="requisition.req_no", read_only=True)
 
     class Meta:
         model = Asset
@@ -97,11 +101,21 @@ class AssetSerializer(serializers.ModelSerializer):
             "admin_comments",
             "purchased_from",
             "purchase_cost",
+            "requisition",
+            "requisition_display",
+            "requisition_item_id",
             "is_deleted",
             "created_at",
             "updated_at",
         ]
         read_only_fields = ["created_at", "updated_at"]
+
+    def validate_purchase_date(self, value):
+        if value and (value.year < 1900 or value.year > timezone.now().year + 1):
+            raise serializers.ValidationError(
+                f"Purchase date year must be between 1900 and {timezone.now().year + 1}."
+            )
+        return value
 
 
 class AssignmentHistorySerializer(serializers.ModelSerializer):
