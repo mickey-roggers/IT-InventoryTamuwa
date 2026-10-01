@@ -1,14 +1,13 @@
 "use client"
 
-import { FormEvent, ReactNode, useState } from "react"
+import { FormEvent, ReactElement, ReactNode, cloneElement, useCallback, useState } from "react"
 import { Loader2, Pencil, Plus } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { Modal } from "@/components/modal"
 import { apiErrorMessage, apiFetch } from "@/lib/api"
 
 export type FieldValue = string | number | boolean | null | Array<string | number>
@@ -47,6 +46,7 @@ export function ResourceFormDialog({ title, description, endpoint, fields, onSav
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
+  const close = useCallback(() => { if (!saving) setOpen(false) }, [saving])
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -83,10 +83,11 @@ export function ResourceFormDialog({ title, description, endpoint, fields, onSav
   }
 
   return (
-    <Dialog open={open} onOpenChange={(value) => { setOpen(value); if (value) setError("") }}>
-      <DialogTrigger asChild>{trigger || <Button>{method === "POST" ? <Plus /> : <Pencil />}{buttonLabel || (method === "POST" ? `Add ${title}` : `Edit ${title}`)}</Button>}</DialogTrigger>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>{description}</DialogDescription></DialogHeader>
+    <>
+      {trigger
+        ? cloneElement(trigger as ReactElement<{ onClick?: () => void }>, { onClick: () => { setError(""); setOpen(true) } })
+        : <Button onClick={() => { setError(""); setOpen(true) }}>{method === "POST" ? <Plus /> : <Pencil />}{buttonLabel || (method === "POST" ? `Add ${title}` : `Edit ${title}`)}</Button>}
+      <Modal open={open} onClose={close} title={title} description={description} className="sm:max-w-2xl">
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             {fields.map((field) => {
@@ -104,10 +105,11 @@ export function ResourceFormDialog({ title, description, endpoint, fields, onSav
                       {field.type === "textarea" ? (
                         <Textarea id={field.name} name={field.name} required={field.required} placeholder={field.placeholder} defaultValue={stringValue(field.defaultValue)} />
                       ) : field.type === "select" ? (
-                        <Select name={field.name} required={field.required} defaultValue={stringValue(field.defaultValue) || (field.nullable ? "__none__" : undefined)}>
-                          <SelectTrigger id={field.name} className="w-full"><SelectValue placeholder={field.placeholder || `Select ${field.label.toLowerCase()}`} /></SelectTrigger>
-                          <SelectContent>{field.nullable && <SelectItem value="__none__">None</SelectItem>}{field.options?.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
-                        </Select>
+                        <select id={field.name} name={field.name} required={field.required} defaultValue={stringValue(field.defaultValue) || (field.nullable ? "__none__" : "")} className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50">
+                          {!field.nullable && <option value="" disabled={field.required}>{field.placeholder || `Select ${field.label.toLowerCase()}`}</option>}
+                          {field.nullable && <option value="__none__">None</option>}
+                          {field.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        </select>
                       ) : field.type === "multiselect" ? (
                         <select id={field.name} name={field.name} multiple required={field.required} defaultValue={(field.defaultValue as Array<string | number> | undefined)?.map(String)} className="min-h-32 w-full rounded-lg border bg-background px-3 py-2 text-sm">
                           {field.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -123,10 +125,10 @@ export function ResourceFormDialog({ title, description, endpoint, fields, onSav
             })}
           </div>
           {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive first-letter:uppercase">{error}</p>}
-          <DialogFooter><Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button><Button type="submit" disabled={saving}>{saving && <Loader2 className="animate-spin" />}{method === "POST" ? "Save" : "Save changes"}</Button></DialogFooter>
+          <div className="-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end"><Button type="button" variant="outline" onClick={close}>Cancel</Button><Button type="submit" disabled={saving}>{saving && <Loader2 className="animate-spin" />}{method === "POST" ? "Save" : "Save changes"}</Button></div>
         </form>
-      </DialogContent>
-    </Dialog>
+      </Modal>
+    </>
   )
 }
 

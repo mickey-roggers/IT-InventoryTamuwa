@@ -1,36 +1,83 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Tamuwa IT Inventory Frontend
 
-## Getting Started
+The Next.js interface for the Tamuwa IT Inventory platform. It provides responsive inventory, maintenance, procurement, project, task, directory, notification, and user-management workflows backed by the Django REST API.
 
-First, run the development server:
+For full project setup and backend instructions, see the [repository README](../README.md).
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Stack
+
+- Next.js 16 App Router
+- React 19 and TypeScript
+- Tailwind CSS 4 with local reusable components
+- SWR for client-side fetching and cache updates
+- Recharts for dashboard visualizations
+- Lucide React for icons
+
+## How requests flow
+
+Browser-facing components call `/api/backend/*`. The Next.js route handler forwards those requests to `DJANGO_API_URL`, attaches the JWT stored in HTTP-only cookies, and refreshes expired access tokens when possible.
+
+```text
+Client component → apiFetch() → Next.js proxy → Django /api/*
+                                ↑
+                         HTTP-only JWT cookies
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+This keeps backend credentials out of client-side JavaScript and avoids calling Django directly from the browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Setup
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Requires Node.js 20.9 or newer and a running Django backend.
 
-## Learn More
+```powershell
+Copy-Item .env.example .env.local
+npm ci
+npm run dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+Open [http://localhost:3000](http://localhost:3000).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Environment variables
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `DJANGO_API_URL` | `http://127.0.0.1:8000` | Django origin as seen by the Next.js server |
+| `NEXT_PUBLIC_DJANGO_URL` | `http://127.0.0.1:8000` | Public origin used for the Django admin link |
 
-## Deploy on Vercel
+Do not include trailing slashes.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Commands
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```powershell
+npm run dev    # Start the development server
+npm run lint   # Run ESLint
+npm run build  # Compile production assets and validate TypeScript
+npm run start  # Serve a completed production build
+```
+
+## Source layout
+
+```text
+src/
+├── app/
+│   ├── (app)/              # Authenticated application routes
+│   ├── api/auth/           # Login, logout, and session handlers
+│   ├── api/backend/        # Authenticated Django proxy
+│   └── login/              # Public login route
+├── components/
+│   ├── providers/          # Authentication context
+│   ├── ui/                 # Local Tailwind primitives
+│   └── *.tsx               # Shared application components
+└── lib/
+    ├── api.ts              # Browser API client
+    ├── server-api.ts       # Server-only Django and cookie helpers
+    ├── types.ts            # API data types
+    └── utils.ts            # Shared utilities
+```
+
+## UI conventions
+
+- UI primitives are local React components styled with Tailwind; the project does not use shadcn or Radix.
+- Reuse components from `src/components/ui` before introducing duplicate styles.
+- Keep backend requests inside `apiFetch()` or server-side API helpers so authentication behavior remains consistent.
+- Run both lint and the production build before merging frontend changes.

@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import useSWR from "swr"
@@ -25,6 +26,7 @@ import {
   UserRound,
   Users,
   Wrench,
+  X,
   XCircle,
 } from "lucide-react"
 
@@ -32,15 +34,6 @@ import { useAuth } from "@/components/providers/auth-provider"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { apiFetch } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
@@ -133,6 +126,7 @@ function Sidebar() {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth()
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const isAdmin = Boolean(user?.is_staff || user?.is_superuser || user?.profile?.role === "admin" || user?.profile?.role === "super_admin")
   const { data: notifications } = useSWR<{ count: number }>("system-alerts/", apiFetch)
   const unread = notifications?.count || 0
@@ -144,33 +138,35 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="lg:pl-64">
         <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b bg-background/90 px-4 backdrop-blur-xl sm:px-6 lg:px-8">
           <div className="flex items-center gap-3">
-            <Sheet>
-              <SheetTrigger asChild><Button variant="outline" size="icon" className="lg:hidden" aria-label="Open navigation"><Menu /></Button></SheetTrigger>
-              <SheetContent side="left" className="w-72 border-sidebar-border bg-sidebar p-4 text-sidebar-foreground">
-                <SheetTitle className="sr-only">Navigation</SheetTitle>
+            <Button variant="outline" size="icon" className="lg:hidden" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)}><Menu /></Button>
+            {mobileNavOpen && <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
+              <button className="absolute inset-0 bg-black/35 backdrop-blur-sm" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />
+              <aside className="absolute inset-y-0 left-0 w-72 overflow-y-auto border-r border-sidebar-border bg-sidebar p-4 text-sidebar-foreground shadow-2xl">
+                <Button variant="ghost" size="icon-sm" className="absolute right-3 top-3 text-sidebar-foreground" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)}><X /></Button>
                 <Brand />
-                <Navigation />
-              </SheetContent>
-            </Sheet>
+                <Navigation close={() => setMobileNavOpen(false)} />
+              </aside>
+            </div>}
             <div className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex"><Building2 className="size-3.5" />{user?.profile?.department || "All departments"}</div>
           </div>
           <div className="flex items-center gap-2">
             <Button asChild variant="ghost" size="icon" className="relative" aria-label="Notifications">
               <Link href="/notifications"><Bell />{unread > 0 && <Badge className="absolute -right-1 -top-1 h-4 min-w-4 px-1 text-[9px]">{unread}</Badge>}</Link>
             </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="h-10 gap-2 px-2"><Avatar className="size-7"><AvatarFallback className="bg-primary text-xs text-primary-foreground">{initials}</AvatarFallback></Avatar><span className="hidden max-w-32 truncate text-sm sm:inline">{user?.first_name || user?.username || "Account"}</span></Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel><span className="block truncate">{user?.username}</span><span className="block truncate text-xs font-normal text-muted-foreground">{user?.email || "No email set"}</span></DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild><Link href="/profile"><UserRound /> Profile</Link></DropdownMenuItem>
-                {isAdmin && <DropdownMenuItem asChild><Link href="/users"><UserCog /> User management</Link></DropdownMenuItem>}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={logout} className="text-destructive"><LogOut /> Sign out</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <details className="group relative">
+              <summary className="flex h-10 cursor-pointer list-none items-center gap-2 rounded-lg px-2 text-sm font-medium transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
+                <Avatar className="size-7"><AvatarFallback className="bg-primary text-xs text-primary-foreground">{initials}</AvatarFallback></Avatar>
+                <span className="hidden max-w-32 truncate sm:inline">{user?.first_name || user?.username || "Account"}</span>
+              </summary>
+              <div className="absolute right-0 z-50 mt-1 w-56 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl">
+                <div className="px-2 py-1.5 text-xs font-medium"><span className="block truncate">{user?.username}</span><span className="block truncate font-normal text-muted-foreground">{user?.email || "No email set"}</span></div>
+                <div className="-mx-1 my-1 h-px bg-border" />
+                <Link href="/profile" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent focus:bg-accent focus:outline-none"><UserRound className="size-4" /> Profile</Link>
+                {isAdmin && <Link href="/users" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent focus:bg-accent focus:outline-none"><UserCog className="size-4" /> User management</Link>}
+                <div className="-mx-1 my-1 h-px bg-border" />
+                <button type="button" onClick={logout} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-destructive hover:bg-destructive/10 focus:bg-destructive/10 focus:outline-none"><LogOut className="size-4" /> Sign out</button>
+              </div>
+            </details>
           </div>
         </header>
         <main className="mx-auto max-w-[1600px] p-4 sm:p-6 lg:p-8">{children}</main>

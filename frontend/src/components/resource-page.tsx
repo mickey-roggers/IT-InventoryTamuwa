@@ -11,7 +11,6 @@ import { useAuth } from "@/components/providers/auth-provider"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { apiFetch, unpackResults } from "@/lib/api"
@@ -72,8 +71,8 @@ export function ResourcePage<T>({ title, description, eyebrow, endpoint, searchP
         <div className="flex flex-col justify-between gap-3 border-b px-4 py-4 xl:flex-row xl:items-center">
           <div className="relative w-full sm:max-w-sm"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} className="pl-9" placeholder={searchPlaceholder} /></div>
           <div className="flex flex-wrap items-center gap-2">
-            {filters.map((filter) => <Select key={filter.name} value={filterValues[filter.name] || "__all__"} onValueChange={(value) => { setFilterValues((current) => ({ ...current, [filter.name]: value === "__all__" ? "" : value })); setPage(1) }}><SelectTrigger className="w-40"><SelectValue placeholder={filter.label} /></SelectTrigger><SelectContent><SelectItem value="__all__">All {filter.label.toLowerCase()}</SelectItem>{filter.options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select>)}
-            {ordering.length > 0 && <Select value={order || "__default__"} onValueChange={(value) => { setOrder(value === "__default__" ? "" : value); setPage(1) }}><SelectTrigger className="w-48"><SelectValue placeholder="Sort by" /></SelectTrigger><SelectContent><SelectItem value="__default__">Default order</SelectItem>{ordering.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select>}
+            {filters.map((filter) => <select key={filter.name} aria-label={filter.label} value={filterValues[filter.name] || "__all__"} onChange={(event) => { const value = event.target.value; setFilterValues((current) => ({ ...current, [filter.name]: value === "__all__" ? "" : value })); setPage(1) }} className="h-8 w-40 rounded-lg border border-input bg-background px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"><option value="__all__">All {filter.label.toLowerCase()}</option>{filter.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>)}
+            {ordering.length > 0 && <select aria-label="Sort by" value={order || "__default__"} onChange={(event) => { const value = event.target.value; setOrder(value === "__default__" ? "" : value); setPage(1) }} className="h-8 w-48 rounded-lg border border-input bg-background px-2.5 text-sm outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/50"><option value="__default__">Default order</option>{ordering.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>}
             {hasActiveFilters && <Button variant="ghost" size="sm" onClick={() => { setSearch(""); setFilterValues({}); setOrder(""); setPage(1) }}><X />Clear</Button>}
             <p className="ml-1 text-xs text-muted-foreground"><span className="font-mono font-medium text-foreground">{count}</span> records</p>
           </div>
