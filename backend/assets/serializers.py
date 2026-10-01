@@ -110,6 +110,53 @@ class AssetSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["created_at", "updated_at"]
+        # DRF's generated validator for the conditional model constraint expects
+        # every condition field (including is_deleted) in PATCH payloads. Asset
+        # uniqueness is validated below using the submitted values merged with
+        # the current instance.
+        validators = []
+
+    def validate(self, attrs):
+        instance = self.instance
+        category = attrs.get(
+            "category",
+            instance.category if instance else None,
+        )
+        serial_number = attrs.get(
+            "serial_number",
+            instance.serial_number if instance else "",
+        )
+        is_deleted = attrs.get(
+            "is_deleted",
+            instance.is_deleted if instance else False,
+        )
+
+        serial_number = (serial_number or "").strip()
+        if (
+            not is_deleted
+            and category
+            and serial_number
+            and serial_number.lower() not in {"n/a", "generic"}
+        ):
+            duplicates = Asset.objects.filter(
+                category=category,
+                serial_number__iexact=serial_number,
+                is_deleted=False,
+            )
+            if instance:
+                duplicates = duplicates.exclude(pk=instance.pk)
+            if duplicates.exists():
+                raise serializers.ValidationError(
+                    {
+                        "serial_number": (
+                            "An active asset in this category already has this "
+                            "serial number. Use a unique serial number, or enter "
+                            '"N/A" / "Generic" if the item has no unique identifier.'
+                        )
+                    }
+                )
+
+        return attrs
 
     def validate_purchase_date(self, value):
         if value and (value.year < 1900 or value.year > timezone.now().year + 1):

@@ -364,6 +364,30 @@ class AssetAPITest(TestCase):
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertEqual(resp.data["results"][0]["alias_name"], "Boardroom display")
 
+    def test_api_partial_update_does_not_require_is_deleted(self):
+        self.client.force_authenticate(user=self.admin)
+        resp = self.client.patch(
+            f"/api/assets/{self.asset.pk}/",
+            {"alias_name": "Reception laptop"},
+            format="json",
+        )
+
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.asset.refresh_from_db()
+        self.assertEqual(self.asset.alias_name, "Reception laptop")
+
+    def test_api_partial_update_rejects_duplicate_active_serial(self):
+        duplicate = make_asset("API-002", category=self.asset.category, user=self.admin)
+        self.client.force_authenticate(user=self.admin)
+        resp = self.client.patch(
+            f"/api/assets/{duplicate.pk}/",
+            {"serial_number": self.asset.serial_number},
+            format="json",
+        )
+
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("serial_number", resp.data)
+
     def test_api_categories_list(self):
         self.client.force_authenticate(user=self.viewer)
         resp = self.client.get("/api/categories/")
