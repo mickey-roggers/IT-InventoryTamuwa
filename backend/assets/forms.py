@@ -7,12 +7,13 @@ class AssetForm(forms.ModelForm):
     class Meta:
         model = Asset
         fields = [
-            'asset_id', 'category', 'model_description', 'serial_number',
+            'alias_name', 'asset_id', 'category', 'model_description', 'serial_number',
             'purchase_date', 'purchased_from', 'purchase_cost',
             'assigned_to', 'department', 'status',
             'requisition', 'admin_comments'
         ]
         widgets = {
+            'alias_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Reception phone'}),
             'asset_id': forms.TextInput(attrs={'class': 'form-control', 'readonly': 'readonly'}),
             'category': forms.Select(attrs={'class': 'form-control'}),
             'model_description': forms.TextInput(attrs={'class': 'form-control'}),

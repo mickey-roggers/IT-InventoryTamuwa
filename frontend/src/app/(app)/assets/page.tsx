@@ -8,7 +8,7 @@ import { ResourcePage } from "@/components/resource-page"
 import { StatusBadge } from "@/components/status-badge"
 import { Button } from "@/components/ui/button"
 import { apiFetch, unpackResults } from "@/lib/api"
-import { formatCurrency, formatDate } from "@/lib/format"
+import { assetDisplayName, formatCurrency, formatDate } from "@/lib/format"
 import type { Asset, Category, Department, Paginated, Person, Requisition, StatusOption } from "@/lib/types"
 
 export default function AssetsPage() {
@@ -23,7 +23,7 @@ export default function AssetsPage() {
     title="Assets"
     description="Search, register, and inspect every device in the organisation."
     endpoint="assets/"
-    searchPlaceholder="Search asset ID, serial number, model, or assignee…"
+    searchPlaceholder="Search alias, asset ID, serial number, model, or assignee…"
     emptyMessage="Add the first asset to begin tracking inventory."
     rowHref={(item) => `/assets/${item.id}`}
     exportUrl="assets/export/"
@@ -32,8 +32,9 @@ export default function AssetsPage() {
       { name: "status", label: "Statuses", options: unpackResults(statuses).map((item) => ({ label: item.name, value: String(item.id) })) },
       { name: "assigned", label: "Assignment", options: [{ label: "Assigned", value: "assigned" }, { label: "Unassigned", value: "unassigned" }] },
     ]}
-    ordering={[{ label: "Newest", value: "-created_at" }, { label: "Asset ID A–Z", value: "asset_id" }, { label: "Asset ID Z–A", value: "-asset_id" }, { label: "Category", value: "category__name" }, { label: "Model", value: "model_description" }, { label: "Purchase cost", value: "-purchase_cost" }, { label: "Purchase date", value: "-purchase_date" }, { label: "Status", value: "status__name" }, { label: "Vendor", value: "purchased_from" }]}
+    ordering={[{ label: "Newest", value: "-created_at" }, { label: "Alias A–Z", value: "alias_name" }, { label: "Alias Z–A", value: "-alias_name" }, { label: "Asset ID A–Z", value: "asset_id" }, { label: "Asset ID Z–A", value: "-asset_id" }, { label: "Category", value: "category__name" }, { label: "Model", value: "model_description" }, { label: "Purchase cost", value: "-purchase_cost" }, { label: "Purchase date", value: "-purchase_date" }, { label: "Status", value: "status__name" }, { label: "Vendor", value: "purchased_from" }]}
     create={{ title: "New asset", description: "Register a device in the inventory.", buttonLabel: "Add asset", adminOnly: true, fields: [
+      { name: "alias_name", label: "Alias name", placeholder: "e.g. Reception phone", helpText: "The familiar internal name shown throughout the system." },
       { name: "asset_id", label: "Asset ID (optional)", placeholder: "Leave blank to generate from category code", helpText: "Generated automatically when left blank." },
       { name: "serial_number", label: "Serial number", required: true },
       { name: "model_description", label: "Model / description", required: true },
@@ -48,13 +49,13 @@ export default function AssetsPage() {
       { name: "admin_comments", label: "Notes", type: "textarea" },
     ] }}
     columns={[
-      { label: "Asset", render: (item) => <div><p className="font-mono text-sm font-semibold">{item.asset_id}</p><p className="mt-0.5 max-w-56 truncate text-xs text-muted-foreground">{item.model_description}</p></div> },
+      { label: "Alias name", render: (item) => <div><p className="text-sm font-semibold">{assetDisplayName(item)}</p><p className="mt-0.5 max-w-56 truncate font-mono text-xs text-muted-foreground">{item.asset_id} · {item.model_description}</p></div> },
       { label: "Category", render: (item) => item.category.name },
       { label: "Serial", render: (item) => <span className="font-mono text-xs">{item.serial_number}</span> },
       { label: "Assigned to", render: (item) => <div><p>{item.assigned_to?.full_name || "Unassigned"}</p><p className="text-xs text-muted-foreground">{item.department?.name || "No department"}</p></div> },
       { label: "Status", render: (item) => <StatusBadge value={item.status.name} /> },
       { label: "Purchased", render: (item) => <div><p>{formatDate(item.purchase_date)}</p><p className="text-xs text-muted-foreground">{formatCurrency(item.purchase_cost)}</p></div> },
-      { label: "", className: "w-10", render: (item) => <Button asChild variant="ghost" size="icon-sm"><Link href={`/assets/${item.id}`} aria-label={`Open ${item.asset_id}`}><ArrowUpRight /></Link></Button> },
+      { label: "", className: "w-10", render: (item) => <Button asChild variant="ghost" size="icon-sm"><Link href={`/assets/${item.id}`} aria-label={`Open ${assetDisplayName(item)}`}><ArrowUpRight /></Link></Button> },
     ]}
   />
 }

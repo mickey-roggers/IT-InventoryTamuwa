@@ -124,7 +124,7 @@ def export_assets_excel(assets):
     ws_inv = wb.create_sheet("ASSET Inventory", 1)
     ws_inv.append([
         'Asset_ID', 'Category', 'Model / Description', 'Purchase Date',
-        'Serial Number', 'Assigned To', 'Last Known User', 'Current Status', 'Admin Comments'
+        'Serial Number', 'Assigned To', 'Last Known User', 'Current Status', 'Admin Comments', 'Alias Name'
     ])
     style_header_row(ws_inv)
 
@@ -140,6 +140,7 @@ def export_assets_excel(assets):
             asset.last_known_person.full_name if asset.last_known_person else '',
             asset.status.name if asset.status else '',
             asset.admin_comments,
+            asset.alias_name,
         ])
 
     # --- Dropdown: Category (col B) → LISTS!A2:A500 ---
@@ -202,7 +203,7 @@ def export_assets_excel(assets):
 
     # --- Alternating row shading ---
     ws_inv.conditional_formatting.add(
-        f'A2:I{INV_MAX}',
+        f'A2:J{INV_MAX}',
         FormulaRule(
             formula=['=MOD(ROW(),2)=0'],
             fill=PatternFill(start_color="EBF1F7", end_color="EBF1F7", fill_type="solid"),
@@ -210,7 +211,7 @@ def export_assets_excel(assets):
     )
 
     # Column widths & freeze
-    for col, width in zip('ABCDEFGHI', [15, 20, 32, 14, 20, 22, 22, 20, 40]):
+    for col, width in zip('ABCDEFGHIJ', [15, 20, 32, 14, 20, 22, 22, 20, 40, 24]):
         ws_inv.column_dimensions[col].width = width
     ws_inv.freeze_panes = 'A2'
 
@@ -458,10 +459,11 @@ def export_assets_pdf(assets):
     elements.append(Spacer(1, 0.2*inch))
 
     # Table data
-    data = [['Asset ID', 'Category', 'Model', 'Serial', 'Assigned To', 'Status']]
+    data = [['Alias Name', 'Asset ID', 'Category', 'Model', 'Serial', 'Assigned To', 'Status']]
 
     for asset in assets[:100]:  # Limit to 100 for PDF
         data.append([
+            asset.alias_name or asset.asset_id,
             asset.asset_id,
             asset.category.name if asset.category else '',
             asset.model_description[:30],

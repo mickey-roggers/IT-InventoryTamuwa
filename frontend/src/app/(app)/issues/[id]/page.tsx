@@ -13,7 +13,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiFetch, unpackResults } from "@/lib/api";
-import { formatDate } from "@/lib/format";
+import { assetDisplayName, assetOptionLabel, formatDate } from "@/lib/format";
 import type { Asset, Comment, Department, Issue, Paginated } from "@/lib/types";
 
 export default function IssueDetailPage() {
@@ -81,7 +81,7 @@ export default function IssueDetailPage() {
       nullable: true,
       defaultValue: issue.asset,
       options: unpackResults(assets).map((item) => ({
-        label: item.asset_id,
+        label: assetOptionLabel(item),
         value: String(item.id),
       })),
     },
@@ -149,7 +149,7 @@ export default function IssueDetailPage() {
                     href={`/assets/${asset.id}`}
                     className="text-primary hover:underline"
                   >
-                    {asset.asset_id}
+                    {assetDisplayName(asset)}
                   </Link>
                 ) : (
                   "—"

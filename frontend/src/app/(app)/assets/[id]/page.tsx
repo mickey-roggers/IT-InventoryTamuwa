@@ -27,7 +27,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiFetch, unpackResults } from "@/lib/api";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { assetDisplayName, assetOptionLabel, formatCurrency, formatDate } from "@/lib/format";
 import type {
   Asset,
   AssetLink,
@@ -119,6 +119,7 @@ export default function AssetDetailPage() {
     );
 
   const facts = [
+    { label: "Asset ID", value: asset.asset_id, icon: Hash },
     { label: "Category", value: asset.category.name, icon: Cpu },
     { label: "Serial number", value: asset.serial_number, icon: Hash },
     {
@@ -150,6 +151,12 @@ export default function AssetDetailPage() {
   );
 
   const fields = [
+    {
+      name: "alias_name",
+      label: "Alias name",
+      defaultValue: asset.alias_name,
+      helpText: "The familiar internal name shown throughout the system.",
+    },
     {
       name: "asset_id",
       label: "Asset ID",
@@ -260,8 +267,8 @@ export default function AssetDetailPage() {
       </Button>
       <PageHeader
         eyebrow="Asset record"
-        title={asset.asset_id}
-        description={asset.model_description}
+        title={assetDisplayName(asset)}
+        description={`${asset.asset_id} · ${asset.model_description}`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge value={asset.status.name} className="px-3 py-1" />
@@ -388,7 +395,7 @@ export default function AssetDetailPage() {
             <div className="mb-3">
               <CreateResourceDialog
                 title="Link asset"
-                description="Link this record to another asset. Existing chains are joined automatically."
+                description="Add a direct connection. Healthy connected items share their assignment while unavailable items act as chain boundaries."
                 endpoint="asset-links/"
                 buttonLabel="Link asset"
                 fixedValues={{ asset: asset.id }}
@@ -401,7 +408,7 @@ export default function AssetDetailPage() {
                     options: unpackResults(allAssets)
                       .filter((item) => item.id !== asset.id)
                       .map((item) => ({
-                        label: `${item.asset_id} · ${item.model_description}`,
+                        label: assetOptionLabel(item),
                         value: String(item.id),
                       })),
                   },
@@ -418,6 +425,10 @@ export default function AssetDetailPage() {
                   link.asset === asset.id ? link.linked_asset : link.asset;
                 const label =
                   link.asset === asset.id
+                    ? link.linked_asset_alias_name || link.linked_asset_display
+                    : link.asset_alias_name || link.asset_display;
+                const reference =
+                  link.asset === asset.id
                     ? link.linked_asset_display
                     : link.asset_display;
                 return (
@@ -426,9 +437,9 @@ export default function AssetDetailPage() {
                     href={`/assets/${linkedId}`}
                     className="block rounded-lg border p-3 hover:bg-muted"
                   >
-                    <p className="font-mono font-medium">{label}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {link.notes || "Linked asset"}
+                    <p className="font-medium">{label}</p>
+                    <p className="font-mono text-xs text-muted-foreground">
+                      {reference}{link.notes ? ` · ${link.notes}` : ""}
                     </p>
                   </Link>
                 );
@@ -498,10 +509,10 @@ export default function AssetDetailPage() {
                 .map((item) => (
                   <div key={item.id} className="rounded-lg border p-3">
                     <p className="font-mono font-medium">
-                      {item.linked_asset_display}
+                      {item.linked_asset_alias_name || item.linked_asset_display}
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Unlinked {formatDate(item.unlinked_at, true)} by{" "}
+                      {item.linked_asset_display} · Unlinked {formatDate(item.unlinked_at, true)} by{" "}
                       {item.unlinked_by_username || "System"}
                     </p>
                   </div>

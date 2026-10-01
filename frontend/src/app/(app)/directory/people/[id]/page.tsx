@@ -8,6 +8,7 @@ import { ArrowLeft, ArrowUpRight } from "lucide-react";
 import { DetailCard, DetailGrid } from "@/components/detail-card";
 import { PageHeader } from "@/components/page-header";
 import { RecordActions } from "@/components/record-actions";
+import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -19,6 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { apiFetch, unpackResults } from "@/lib/api";
+import { assetDisplayName } from "@/lib/format";
 import type { Asset, Department, Paginated, Person } from "@/lib/types";
 
 export default function PersonDetailPage() {
@@ -117,11 +119,9 @@ export default function PersonDetailPage() {
               <TableBody>
                 {unpackResults(assets).map((asset) => (
                   <TableRow key={asset.id}>
-                    <TableCell className="font-mono font-medium">
-                      {asset.asset_id}
-                    </TableCell>
+                    <TableCell><p className="font-medium">{assetDisplayName(asset)}</p><p className="font-mono text-xs text-muted-foreground">{asset.asset_id}</p></TableCell>
                     <TableCell>{asset.model_description}</TableCell>
-                    <TableCell>{asset.status.name}</TableCell>
+                    <TableCell><StatusBadge value={asset.status.name} /></TableCell>
                     <TableCell>
                       <Button asChild variant="ghost" size="icon-sm">
                         <Link href={`/assets/${asset.id}`}>

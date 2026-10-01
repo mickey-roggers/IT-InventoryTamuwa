@@ -86,6 +86,13 @@ class Person(models.Model):
 class Asset(models.Model):
     """Core Asset model"""
     asset_id = models.CharField(max_length=50, unique=True, db_index=True)
+    alias_name = models.CharField(
+        max_length=100,
+        blank=True,
+        db_index=True,
+        verbose_name="Alias name",
+        help_text="Internal name commonly used for this item.",
+    )
     category = models.ForeignKey(Category, on_delete=models.PROTECT, related_name='assets')
     model_description = models.CharField(max_length=200, verbose_name="Model / Description")
     serial_number = models.CharField(max_length=100, db_index=True)
@@ -182,7 +189,8 @@ class Asset(models.Model):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.asset_id} - {self.model_description}"
+        name = self.alias_name or self.asset_id
+        return f"{name} ({self.asset_id}) - {self.model_description}" if self.alias_name else f"{self.asset_id} - {self.model_description}"
 
     def get_linked_assets(self):
         """Return all assets linked to this one (via AssetLink)."""

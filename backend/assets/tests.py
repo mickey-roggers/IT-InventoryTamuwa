@@ -11,8 +11,9 @@ from rest_framework import status
 
 from assets.models import (
     Asset, Category, Department, Person,
-    StatusOption, AssignmentHistory, ActivityLog,
+    StatusOption, AssignmentHistory, ActivityLog, AssetLink,
 )
+from assets.linking import create_bidirectional_link, synchronize_healthy_chain
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -129,6 +130,11 @@ class AssetModelTest(TestCase):
         self.assertFalse(asset.is_deleted)
         self.assertEqual(str(asset), "LAP-001 - Test Laptop")
 
+    def test_alias_name_is_used_as_the_friendly_display_name(self):
+        asset = make_asset("LAP-ALIAS", user=self.user, alias_name="Front desk laptop")
+        self.assertEqual(asset.alias_name, "Front desk laptop")
+        self.assertIn("Front desk laptop", str(asset))
+
     def test_cannot_set_in_use_without_assignment(self):
         from django.core.exceptions import ValidationError
         status_in_use = make_status("In Use")
@@ -202,6 +208,52 @@ class AssetMaintenanceSignalTest(TestCase):
 
         asset.refresh_from_db()
         self.assertEqual(asset.status.name, "Available")
+
+
+class AssetLinkChainTest(TestCase):
+    def setUp(self):
+        self.user = make_admin_user("chain_user")
+        self.available = make_status("Available")
+        self.in_use = make_status("In Use")
+        self.missing = make_status("Missing")
+        self.person = make_person("Jane", "Owner")
+
+    def test_unavailable_component_pauses_chain_and_replacement_can_be_used(self):
+        phone = make_asset(
+            "PHN-CHAIN", status=self.in_use, assigned_to=self.person, user=self.user
+        )
+        charger = make_asset(
+            "CHG-CHAIN", status=self.in_use, assigned_to=self.person, user=self.user
+        )
+        headset = make_asset(
+            "HST-CHAIN", status=self.in_use, assigned_to=self.person, user=self.user
+        )
+        replacement = make_asset("CHG-NEW", status=self.available, user=self.user)
+
+        create_bidirectional_link(phone, charger, created_by=self.user)
+        create_bidirectional_link(charger, headset, created_by=self.user)
+
+        charger.status = self.missing
+        charger.updated_by = self.user
+        charger.save()
+
+        phone.refresh_from_db()
+        charger.refresh_from_db()
+        headset.refresh_from_db()
+        self.assertEqual(phone.status.name, "Available")
+        self.assertEqual(headset.status.name, "Available")
+        self.assertEqual(charger.status.name, "Missing")
+
+        create_bidirectional_link(phone, replacement, created_by=self.user)
+        synchronize_healthy_chain(phone, updated_by=self.user)
+
+        phone.refresh_from_db()
+        replacement.refresh_from_db()
+        headset.refresh_from_db()
+        self.assertEqual(phone.status.name, "In Use")
+        self.assertEqual(replacement.status.name, "In Use")
+        self.assertEqual(replacement.assigned_to, self.person)
+        self.assertEqual(headset.status.name, "Available")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -303,6 +355,14 @@ class AssetAPITest(TestCase):
         resp = self.client.get("/api/assets/?search=API-001")
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertGreaterEqual(resp.data["count"], 1)
+
+    def test_api_search_by_alias_name(self):
+        self.asset.alias_name = "Boardroom display"
+        self.asset.save()
+        self.client.force_authenticate(user=self.viewer)
+        resp = self.client.get("/api/assets/?search=Boardroom")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["results"][0]["alias_name"], "Boardroom display")
 
     def test_api_categories_list(self):
         self.client.force_authenticate(user=self.viewer)

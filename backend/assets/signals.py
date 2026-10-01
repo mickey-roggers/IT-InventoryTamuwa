@@ -147,6 +147,24 @@ def auto_close_maintenance_logs_on_status_change(sender, instance, created, **kw
 
 
 @receiver(post_save, sender=Asset)
+def pause_chain_when_asset_becomes_unavailable(sender, instance, created, **kwargs):
+    """An unavailable component takes the rest of its linked chain out of use."""
+    if created or not instance.status_id:
+        return
+
+    old_instance = getattr(instance, "_old_instance", None)
+    if not old_instance or not old_instance.status_id:
+        return
+
+    from .linking import BLOCKED_LINK_STATUSES, pause_linked_chain
+
+    old_status = old_instance.status.name
+    new_status = instance.status.name
+    if new_status in BLOCKED_LINK_STATUSES and old_status not in BLOCKED_LINK_STATUSES:
+        pause_linked_chain(instance, updated_by=instance.updated_by)
+
+
+@receiver(post_save, sender=Asset)
 def log_activity(sender, instance, created, **kwargs):
     """Create activity log entry for asset changes"""
     action = 'CREATE' if created else 'UPDATE'

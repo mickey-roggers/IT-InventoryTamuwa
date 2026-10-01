@@ -38,6 +38,7 @@ export interface Person {
 export interface Asset {
   id: number
   asset_id: string
+  alias_name: string
   category: Category
   model_description: string
   serial_number: string
@@ -86,6 +87,7 @@ export interface DashboardStats {
   categories: { name: string; asset_count: number }[]
   recent_activity: {
     asset_id: string | null
+    asset_alias_name: string | null
     action: string
     description: string
     user: string | null
@@ -152,7 +154,7 @@ export interface Project {
   category_availability: {
     category: { id: number; name: string }
     available_count: number
-    assets: { id: number; asset_id: string; model_description: string; status: string; assigned_to: string | null; department: string | null }[]
+    assets: { id: number; asset_id: string; alias_name: string; model_description: string; status: string; assigned_to: string | null; department: string | null }[]
   }[]
 }
 
@@ -271,6 +273,8 @@ export interface AssetLink {
   linked_asset: number
   asset_display: string
   linked_asset_display: string
+  asset_alias_name: string
+  linked_asset_alias_name: string
   notes: string
   created_at: string
 }
@@ -281,6 +285,8 @@ export interface AssetLinkHistory {
   linked_asset: number
   asset_display: string
   linked_asset_display: string
+  asset_alias_name: string
+  linked_asset_alias_name: string
   notes: string
   linked_at: string | null
   unlinked_at: string

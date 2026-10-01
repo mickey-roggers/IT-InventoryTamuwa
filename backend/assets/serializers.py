@@ -85,6 +85,7 @@ class AssetSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "asset_id",
+            "alias_name",
             "category",
             "category_id",
             "model_description",
@@ -152,6 +153,7 @@ class ActivityLogSerializer(serializers.ModelSerializer):
     asset = serializers.SlugRelatedField(
         slug_field="asset_id", read_only=True
     )
+    asset_alias_name = serializers.CharField(source="asset.alias_name", read_only=True, default="")
     user = UserSummarySerializer(read_only=True)
 
     class Meta:
@@ -159,6 +161,7 @@ class ActivityLogSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "asset",
+            "asset_alias_name",
             "user",
             "action",
             "description",

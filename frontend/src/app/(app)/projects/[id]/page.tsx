@@ -13,7 +13,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiFetch, unpackResults } from "@/lib/api";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { assetDisplayName, formatCurrency, formatDate } from "@/lib/format";
 import type {
   Category,
   Comment,
@@ -270,12 +270,8 @@ export default function ProjectDetailPage() {
                         className="flex items-center justify-between gap-3 rounded-md bg-muted/50 px-3 py-2 text-sm hover:bg-muted"
                       >
                         <span>
-                          <span className="font-mono font-medium">
-                            {asset.asset_id}
-                          </span>
-                          <span className="ml-2 text-muted-foreground">
-                            {asset.model_description}
-                          </span>
+                          <span className="font-medium">{assetDisplayName(asset)}</span>
+                          <span className="ml-2 font-mono text-xs text-muted-foreground">{asset.asset_id}</span>
                         </span>
                         <StatusBadge value={asset.status} />
                       </Link>

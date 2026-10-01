@@ -11,6 +11,7 @@ import { RecordActions } from "@/components/record-actions";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiFetch, unpackResults } from "@/lib/api";
+import { assetOptionLabel } from "@/lib/format";
 import type { Asset, Department, Paginated, Person } from "@/lib/types";
 
 export default function DepartmentDetailPage() {
@@ -88,7 +89,7 @@ export default function DepartmentDetailPage() {
           <SimpleList
             items={unpackResults(assets).map((asset) => ({
               id: asset.id,
-              label: `${asset.asset_id} · ${asset.model_description}`,
+              label: assetOptionLabel(asset),
               href: `/assets/${asset.id}`,
             }))}
             empty="No assets belong to this department."

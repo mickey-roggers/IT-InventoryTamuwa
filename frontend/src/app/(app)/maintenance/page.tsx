@@ -4,7 +4,7 @@ import useSWR from "swr"
 import { ResourcePage } from "@/components/resource-page"
 import { StatusBadge } from "@/components/status-badge"
 import { apiFetch, unpackResults } from "@/lib/api"
-import { formatCurrency, formatDate } from "@/lib/format"
+import { assetDisplayName, assetOptionLabel, formatCurrency, formatDate } from "@/lib/format"
 import type { Asset, MaintenanceLog, Paginated, Requisition, Technician } from "@/lib/types"
 
 type ActionOption = { id: number; name: string }
@@ -19,7 +19,7 @@ export default function MaintenancePage() {
     filters={[{ name: "status", label: "Statuses", options: ["Open", "Closed"].map((value) => ({ label: value, value })) }, { name: "performed_by", label: "Technicians", options: unpackResults(technicians).map((item) => ({ label: `${item.technician_name} · ${item.company_name}`, value: String(item.id) })) }]}
     ordering={[{ label: "Newest", value: "-timestamp" }, { label: "Oldest", value: "timestamp" }, { label: "Reported date", value: "-date_reported" }, { label: "Repair cost", value: "-cost_of_repair" }]}
     create={{ title: "Maintenance report", description: "Open a maintenance record for an asset.", buttonLabel: "Log maintenance", adminOnly: true, fields: [
-      { name: "asset", label: "Asset", type: "select", required: true, options: unpackResults(assets).map((item) => ({ label: `${item.asset_id} · ${item.model_description}`, value: item.asset_id })) },
+      { name: "asset", label: "Asset", type: "select", required: true, options: unpackResults(assets).map((item) => ({ label: assetOptionLabel(item), value: item.asset_id })) },
       { name: "date_reported", label: "Date reported", type: "date", required: true, defaultValue: new Date().toISOString().slice(0, 10) },
       { name: "timestamp", label: "Maintenance date/time", type: "datetime-local" },
       { name: "date_completed", label: "Date completed", type: "date" },
@@ -32,7 +32,7 @@ export default function MaintenancePage() {
       { name: "notes", label: "Notes", type: "textarea" },
     ] }}
     columns={[
-      { label: "Asset", render: (item) => <span className="font-mono font-semibold">{item.asset}</span> },
+      { label: "Asset", render: (item) => { const asset = unpackResults(assets).find((value) => value.asset_id === item.asset); return asset ? <div><p className="font-semibold">{assetDisplayName(asset)}</p><p className="font-mono text-xs text-muted-foreground">{asset.asset_id}</p></div> : <span className="font-mono font-semibold">{item.asset}</span> } },
       { label: "Reported", render: (item) => formatDate(item.date_reported) },
       { label: "Issue", render: (item) => <p className="max-w-sm truncate">{item.description}</p> },
       { label: "Technician", render: (item) => item.performed_by?.technician_name || "Unassigned" },

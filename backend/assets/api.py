@@ -57,13 +57,14 @@ class AssetViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminOrReadOnly]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = [
+        "alias_name",
         "asset_id",
         "serial_number",
         "model_description",
         "assigned_to__first_name",
         "assigned_to__last_name",
     ]
-    ordering_fields = ["asset_id", "created_at", "purchase_date"]
+    ordering_fields = ["alias_name", "asset_id", "created_at", "purchase_date"]
     ordering = ["-created_at"]
 
     def get_queryset(self):

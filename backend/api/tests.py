@@ -202,7 +202,7 @@ class ExtendedApiTests(TestCase):
         self.assertEqual(len(detail.data["assistants"]), 1)
         self.assertEqual(len(detail.data["services"]), 1)
 
-    def test_asset_linking_accepts_multiple_assets_and_builds_complete_chain(self):
+    def test_asset_linking_accepts_multiple_assets_and_builds_direct_chain_edges(self):
         category = Category.objects.create(name="Dock", short_code="DCK")
         available = StatusOption.objects.create(name="Available")
         assets = [
@@ -220,7 +220,7 @@ class ExtendedApiTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 201, response.data)
-        self.assertEqual(AssetLink.objects.count(), 6)
+        self.assertEqual(AssetLink.objects.count(), 4)
 
     def test_creating_asset_from_bought_queue_generates_id_and_reduces_quantity(self):
         category = Category.objects.create(name="Laptop", short_code="LAP")

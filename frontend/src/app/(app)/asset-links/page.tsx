@@ -21,7 +21,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { apiFetch, unpackResults } from "@/lib/api";
-import { formatDate } from "@/lib/format";
+import { assetDisplayName, assetOptionLabel, formatDate } from "@/lib/format";
 import type {
   Asset,
   AssetLink,
@@ -42,7 +42,7 @@ export default function AssetLinksPage() {
     Paginated<AssetLinkHistory> | AssetLinkHistory[]
   >("asset-link-history/?recent=true&page_size=50", apiFetch);
   const assetOptions = unpackResults(assets).map((asset) => ({
-    label: `${asset.asset_id} · ${asset.model_description}`,
+    label: assetOptionLabel(asset),
     value: String(asset.id),
   }));
   const assetMap = new Map(
@@ -66,12 +66,12 @@ export default function AssetLinksPage() {
       <PageHeader
         eyebrow="Inventory relationships"
         title="Asset links"
-        description="Connect related equipment such as laptops, docks, chargers, monitors, and peripherals."
+        description="Connect equipment as chains. If one component is missing, retired, or under maintenance, its in-use chain is paused until a healthy replacement is linked."
         actions={
           isAdmin ? (
             <CreateResourceDialog
               title="Asset link"
-              description="Choose two inventory records to connect. Existing chains are joined automatically."
+              description="Choose inventory records to connect as a chain."
               endpoint="asset-links/"
               buttonLabel="Link assets"
               fields={[
@@ -88,7 +88,7 @@ export default function AssetLinksPage() {
               type: "multiselect",
                   required: true,
                   options: assetOptions,
-              helpText: "Select one or more assets. Existing link chains will be joined.",
+              helpText: "Select one or more assets to add direct links from the primary item.",
                 },
                 { name: "notes", label: "Notes", type: "textarea" },
               ]}
@@ -130,7 +130,7 @@ export default function AssetLinksPage() {
                       second?.status.name,
                     ].some(
                       (value) =>
-                        value === "Missing" || value === "Under Maintenance",
+                        value === "Missing" || value === "Retired" || value === "Under Maintenance",
                     );
                     return (
                       <TableRow key={link.id}>
@@ -207,11 +207,13 @@ export default function AssetLinksPage() {
               <TableBody>
                 {recentlyUnlinked.map((item) => (
                   <TableRow key={item.id}>
-                    <TableCell className="font-mono">
-                      {item.asset_display}
+                    <TableCell>
+                      <span className="font-medium">{item.asset_alias_name || item.asset_display}</span>
+                      {item.asset_alias_name && <span className="ml-2 font-mono text-xs text-muted-foreground">{item.asset_display}</span>}
                     </TableCell>
-                    <TableCell className="font-mono">
-                      {item.linked_asset_display}
+                    <TableCell>
+                      <span className="font-medium">{item.linked_asset_alias_name || item.linked_asset_display}</span>
+                      {item.linked_asset_alias_name && <span className="ml-2 font-mono text-xs text-muted-foreground">{item.linked_asset_display}</span>}
                     </TableCell>
                     <TableCell>{formatDate(item.unlinked_at, true)}</TableCell>
                     <TableCell>
@@ -242,9 +244,9 @@ function AssetLinkCell({
   return (
     <div className="flex items-center gap-2">
       <div>
-        <p className="font-mono font-medium">{label}</p>
-        <p className="text-xs text-muted-foreground">
-          {asset?.model_description}
+        <p className="font-medium">{asset ? assetDisplayName(asset) : label}</p>
+        <p className="font-mono text-xs text-muted-foreground">
+          {asset ? `${asset.asset_id} · ${asset.model_description}` : "Asset details unavailable"}
         </p>
       </div>
       {asset && (

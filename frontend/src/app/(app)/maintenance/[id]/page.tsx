@@ -12,7 +12,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiFetch, unpackResults } from "@/lib/api";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { assetDisplayName, assetOptionLabel, formatCurrency, formatDate } from "@/lib/format";
 import type {
   Asset,
   MaintenanceLog,
@@ -68,7 +68,7 @@ export default function MaintenanceDetailPage() {
       required: true,
       defaultValue: record.asset,
       options: unpackResults(assets).map((item) => ({
-        label: `${item.asset_id} · ${item.model_description}`,
+        label: assetOptionLabel(item),
         value: item.asset_id,
       })),
     },
@@ -167,6 +167,7 @@ export default function MaintenanceDetailPage() {
       defaultValue: record.notes,
     },
   ];
+  const currentAsset = unpackResults(assets).find((item) => item.asset_id === record.asset);
 
   return (
     <>
@@ -178,8 +179,8 @@ export default function MaintenanceDetailPage() {
       </Button>
       <PageHeader
         eyebrow="Maintenance record"
-        title={record.asset}
-        description={record.description}
+        title={currentAsset ? assetDisplayName(currentAsset) : record.asset}
+        description={`${record.asset} · ${record.description}`}
         actions={
           <RecordActions
             endpoint={`maintenance-logs/${id}/`}

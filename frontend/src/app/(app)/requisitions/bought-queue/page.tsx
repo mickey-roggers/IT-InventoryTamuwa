@@ -19,7 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { apiFetch, unpackResults } from "@/lib/api";
-import { formatCurrency } from "@/lib/format";
+import { assetOptionLabel, formatCurrency } from "@/lib/format";
 import type {
   Asset,
   Category,
@@ -65,7 +65,7 @@ export default function BoughtItemsQueuePage() {
     unpackResults(requisitions).map((item) => [item.id, item]),
   );
   const assetOptions = unpackResults(assets).map((asset) => ({
-    label: `${asset.asset_id} · ${asset.model_description}`,
+    label: assetOptionLabel(asset),
     value: String(asset.id),
   }));
   const isAdmin = Boolean(user?.is_staff || user?.is_superuser || user?.profile?.role === "admin" || user?.profile?.role === "super_admin");
@@ -127,6 +127,7 @@ export default function BoughtItemsQueuePage() {
                               method="POST"
                               fixedValues={{ requisition: item.requisition, requisition_item_id: item.id }}
                               fields={[
+                                { name: "alias_name", label: "Alias name", helpText: "The familiar internal name shown throughout the system." },
                                 { name: "asset_id", label: "Asset ID (optional)", helpText: "Leave blank to generate from the category code." },
                                 { name: "model_description", label: "Model / description", required: true, defaultValue: item.item_name },
                                 { name: "serial_number", label: "Serial number", required: true },

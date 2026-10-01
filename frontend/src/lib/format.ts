@@ -10,6 +10,17 @@ export function formatCurrency(value: string | number | null | undefined) {
   return new Intl.NumberFormat("en-KE", { style: "currency", currency: "KES", maximumFractionDigits: 0 }).format(Number(value))
 }
 
+export function assetDisplayName(asset: { alias_name?: string | null; asset_id: string }) {
+  return asset.alias_name?.trim() || asset.asset_id
+}
+
+export function assetOptionLabel(asset: { alias_name?: string | null; asset_id: string; model_description?: string }) {
+  const name = assetDisplayName(asset)
+  const reference = asset.alias_name?.trim() ? ` · ${asset.asset_id}` : ""
+  const model = asset.model_description ? ` · ${asset.model_description}` : ""
+  return `${name}${reference}${model}`
+}
+
 export function toDateTimeLocal(value: string | null | undefined) {
   if (!value) return ""
   const date = new Date(value)

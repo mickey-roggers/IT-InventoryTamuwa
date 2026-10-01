@@ -56,15 +56,15 @@ class ActivityLogInline(admin.TabularInline):
 @admin.register(Asset)
 class AssetAdmin(admin.ModelAdmin):
     list_display = [
-        'asset_id', 'category', 'model_description', 'serial_number',
+        'alias_name', 'asset_id', 'category', 'model_description', 'serial_number',
         'assigned_to', 'department', 'status', 'purchase_date', 'created_at'
     ]
     list_filter = ['status', 'category', 'assigned_to', 'department', 'created_at', 'purchase_date']
-    search_fields = ['asset_id', 'serial_number', 'model_description']
+    search_fields = ['alias_name', 'asset_id', 'serial_number', 'model_description']
     readonly_fields = ['created_at', 'updated_at']
     fieldsets = (
         ('Basic Information', {
-            'fields': ('asset_id', 'category', 'model_description', 'serial_number', 'purchase_date')
+            'fields': ('alias_name', 'asset_id', 'category', 'model_description', 'serial_number', 'purchase_date')
         }),
         ('Assignment', {
             'fields': ('assigned_to', 'department', 'last_known_person', 'status')
@@ -104,6 +104,6 @@ class ActivityLogAdmin(admin.ModelAdmin):
 class AssetLinkAdmin(admin.ModelAdmin):
     list_display = ['asset', 'linked_asset', 'notes', 'created_at', 'created_by']
     list_filter = ['created_at']
-    search_fields = ['asset__asset_id', 'linked_asset__asset_id', 'notes']
+    search_fields = ['asset__alias_name', 'asset__asset_id', 'linked_asset__alias_name', 'linked_asset__asset_id', 'notes']
     readonly_fields = ['created_at']
 

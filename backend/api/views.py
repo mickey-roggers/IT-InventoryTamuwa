@@ -33,6 +33,7 @@ from assets.models import (
     AssetLinkHistory,
 )
 from assets.utils import export_assets_excel
+from assets.linking import create_bidirectional_link, synchronize_healthy_chain
 from assets.serializers import (
     AssetSerializer,
     CategorySerializer,
@@ -180,6 +181,7 @@ class AssetViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminOrReadOnly]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = [
+        "alias_name",
         "asset_id",
         "serial_number",
         "model_description",
@@ -187,7 +189,7 @@ class AssetViewSet(viewsets.ModelViewSet):
         "assigned_to__last_name",
         "purchased_from",
     ]
-    ordering_fields = ["asset_id", "category__name", "model_description", "purchase_cost", "purchase_date", "status__name", "purchased_from", "created_at"]
+    ordering_fields = ["alias_name", "asset_id", "category__name", "model_description", "purchase_cost", "purchase_date", "status__name", "purchased_from", "created_at"]
     ordering = ["-created_at"]
 
     def get_queryset(self):
@@ -464,7 +466,7 @@ class MaintenanceLogViewSet(viewsets.ModelViewSet):
     serializer_class = MaintenanceLogSerializer
     permission_classes = [IsAdminOrReadOnly]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ["asset__asset_id", "description", "notes", "performed_by__technician_name"]
+    search_fields = ["asset__alias_name", "asset__asset_id", "description", "notes", "performed_by__technician_name"]
     ordering_fields = ["timestamp", "date_reported", "date_completed", "cost_of_repair", "maintenance_status"]
 
     def get_queryset(self):
@@ -627,6 +629,7 @@ class DashboardStatsView(APIView):
         recent_data = [
             {
                 "asset_id": a.asset.asset_id if a.asset else None,
+                "asset_alias_name": a.asset.alias_name if a.asset else None,
                 "action": a.action,
                 "description": a.description,
                 "user": a.user.username if a.user else None,
@@ -917,6 +920,7 @@ class ProjectSerializer(serializers.ModelSerializer):
                 "assets": [{
                     "id": asset.id,
                     "asset_id": asset.asset_id,
+                    "alias_name": asset.alias_name,
                     "model_description": asset.model_description,
                     "status": asset.status.name if asset.status else "Unknown",
                     "assigned_to": asset.assigned_to.full_name if asset.assigned_to else None,
@@ -1167,6 +1171,8 @@ class AssetLinkSerializer(serializers.ModelSerializer):
     linked_asset_ids = serializers.PrimaryKeyRelatedField(queryset=Asset.objects.filter(is_deleted=False), many=True, write_only=True, required=False)
     asset_display = serializers.CharField(source='asset.asset_id', read_only=True)
     linked_asset_display = serializers.CharField(source='linked_asset.asset_id', read_only=True)
+    asset_alias_name = serializers.CharField(source='asset.alias_name', read_only=True)
+    linked_asset_alias_name = serializers.CharField(source='linked_asset.alias_name', read_only=True)
     class Meta:
         model = AssetLink
         fields = '__all__'
@@ -1193,18 +1199,6 @@ class AssetLinkViewSet(viewsets.ModelViewSet):
         asset_id = self.request.query_params.get('asset')
         return qs.filter(Q(asset_id=asset_id) | Q(linked_asset_id=asset_id)) if asset_id else qs
 
-    @staticmethod
-    def _chain(asset):
-        visited = {asset.pk}
-        pending = [asset.pk]
-        while pending:
-            linked_ids = AssetLink.objects.filter(asset_id=pending.pop()).values_list("linked_asset_id", flat=True)
-            for linked_id in linked_ids:
-                if linked_id not in visited:
-                    visited.add(linked_id)
-                    pending.append(linked_id)
-        return visited
-
     @transaction.atomic
     def perform_create(self, serializer):
         asset = serializer.validated_data["asset"]
@@ -1213,31 +1207,21 @@ class AssetLinkViewSet(viewsets.ModelViewSet):
             targets.append(serializer.validated_data["linked_asset"])
         notes = serializer.validated_data.get("notes", "")
         first = None
-        combined = self._chain(asset)
+        seen = set()
         for linked_asset in targets:
-            chain_a = self._chain(asset)
-            chain_b = self._chain(linked_asset)
-            combined |= chain_a | chain_b
-            for source_id in chain_a:
-                for target_id in chain_b:
-                    if source_id == target_id:
-                        continue
-                    forward, _ = AssetLink.objects.get_or_create(asset_id=source_id, linked_asset_id=target_id, defaults={"notes": notes, "created_by": self.request.user})
-                    AssetLink.objects.get_or_create(asset_id=target_id, linked_asset_id=source_id, defaults={"notes": notes, "created_by": self.request.user})
-                    if first is None:
-                        first = forward
+            if linked_asset.pk in seen:
+                continue
+            seen.add(linked_asset.pk)
+            forward, _ = create_bidirectional_link(
+                asset,
+                linked_asset,
+                notes=notes,
+                created_by=self.request.user,
+            )
+            if first is None:
+                first = forward
 
-        eligible = list(Asset.objects.filter(pk__in=combined).select_related("status", "assigned_to", "department"))
-        eligible = [item for item in eligible if item.status and item.status.name not in {"Missing", "Retired", "Under Maintenance"}]
-        assignees = {item.assigned_to_id for item in eligible if item.assigned_to_id}
-        if len(assignees) <= 1:
-            if asset.assigned_to_id and asset in eligible:
-                in_use = StatusOption.objects.filter(name="In Use").first()
-                for item in eligible:
-                    if item.pk != asset.pk:
-                        Asset.objects.filter(pk=item.pk).update(assigned_to=asset.assigned_to, department=asset.department, status=in_use or item.status)
-            elif asset.department_id and not asset.assigned_to_id:
-                Asset.objects.filter(pk__in=[item.pk for item in eligible if item.pk != asset.pk]).update(department=asset.department)
+        synchronize_healthy_chain(asset, updated_by=self.request.user)
         serializer.instance = first
 
     @transaction.atomic
@@ -1254,6 +1238,8 @@ class AssetLinkViewSet(viewsets.ModelViewSet):
 class AssetLinkHistorySerializer(serializers.ModelSerializer):
     asset_display = serializers.CharField(source="asset.asset_id", read_only=True)
     linked_asset_display = serializers.CharField(source="linked_asset.asset_id", read_only=True)
+    asset_alias_name = serializers.CharField(source="asset.alias_name", read_only=True)
+    linked_asset_alias_name = serializers.CharField(source="linked_asset.alias_name", read_only=True)
     unlinked_by_username = serializers.CharField(source="unlinked_by.username", read_only=True, default=None)
 
     class Meta:

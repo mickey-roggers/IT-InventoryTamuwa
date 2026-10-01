@@ -5,7 +5,7 @@ import { MessageSquareText } from "lucide-react"
 import { ResourcePage } from "@/components/resource-page"
 import { StatusBadge } from "@/components/status-badge"
 import { apiFetch, unpackResults } from "@/lib/api"
-import { formatDate } from "@/lib/format"
+import { assetOptionLabel, formatDate } from "@/lib/format"
 import type { Asset, Department, Issue, Paginated } from "@/lib/types"
 
 export default function IssuesPage() {
@@ -19,7 +19,7 @@ export default function IssuesPage() {
       { name: "title", label: "Title", required: true },
       { name: "priority", label: "Priority", type: "select", required: true, defaultValue: "Medium", options: ["Low", "Medium", "High", "Critical"].map((value) => ({ label: value, value })) },
       { name: "status", label: "Status", type: "select", required: true, defaultValue: "Open", options: ["Open", "Monitoring", "Resolved", "Closed"].map((value) => ({ label: value, value })) },
-      { name: "asset", label: "Related asset", type: "select", options: unpackResults(assets).map((item) => ({ label: item.asset_id, value: String(item.id) })) },
+      { name: "asset", label: "Related asset", type: "select", options: unpackResults(assets).map((item) => ({ label: assetOptionLabel(item), value: String(item.id) })) },
       { name: "department", label: "Department", type: "select", options: unpackResults(departments).map((item) => ({ label: item.name, value: String(item.id) })) },
       { name: "description", label: "Description", type: "textarea" },
     ] }}

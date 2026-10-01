@@ -9,6 +9,7 @@ from django.views.decorators.http import require_http_methods, require_POST
 from django.utils import timezone
 from .models import Asset, Category, StatusOption, Department, AssignmentHistory
 from .utils import export_assets_excel
+from .linking import create_bidirectional_link, synchronize_healthy_chain
 from users.decorators import role_required
 from inventory_system.filter_utils import handle_filter_request, restore_filters_from_session
 
@@ -32,6 +33,7 @@ def asset_list(request):
     search_query = effective_filters.get('search', '')
     if search_query:
         assets = assets.filter(
+            Q(alias_name__icontains=search_query) |
             Q(asset_id__icontains=search_query) |
             Q(serial_number__icontains=search_query) |
             Q(model_description__icontains=search_query) |
@@ -57,6 +59,7 @@ def asset_list(request):
 
     # Sorting
     SORT_MAP = {
+        'alias_name': 'alias_name',
         'asset_id': 'asset_id',
         'category': 'category__name',
         'model': 'model_description',
@@ -402,66 +405,6 @@ def asset_link(request, pk):
         messages.error(request, 'Please select at least one asset to link.')
         return redirect('assets:detail', pk=pk)
 
-    def get_chain(a):
-        """Get all assets in the same chain as asset a (BFS)."""
-        visited = {a.pk}
-        queue = [a]
-        while queue:
-            current = queue.pop()
-            for lnk in AssetLink.objects.filter(asset=current).select_related('linked_asset'):
-                if lnk.linked_asset_id not in visited:
-                    visited.add(lnk.linked_asset_id)
-                    queue.append(lnk.linked_asset)
-        return visited  # set of PKs
-
-    SKIP_STATUSES = {'Missing', 'Retired', 'Under Maintenance'}
-
-    def sync_chain(chain_pks, trigger_asset):
-        """
-        After linking, synchronise assignment/status across the chain.
-        Rules:
-        - Skip assets with status Missing / Retired / Under Maintenance.
-        - If trigger_asset has an assignee, propagate to the rest (conflict check first).
-        - Conflict = two eligible assets in chain have *different* non-null assignees.
-        """
-        chain_assets = list(Asset.objects.filter(pk__in=chain_pks).select_related('status', 'assigned_to', 'department'))
-
-        # Eligible = not in skip statuses
-        eligible = [a for a in chain_assets if a.status and a.status.name not in SKIP_STATUSES]
-
-        # Collect distinct non-null assignees
-        assignees = {a.assigned_to_id for a in eligible if a.assigned_to_id}
-        depts = {a.department_id for a in eligible if a.department_id is not None}
-
-        # Conflict: more than one distinct person assigned across the chain
-        if len(assignees) > 1:
-            assigned_ids_str = ', '.join(
-                a.assigned_to.get_full_name() or a.assigned_to.username
-                for a in eligible if a.assigned_to_id
-            )
-            messages.warning(
-                request,
-                f'⚠️ Conflict detected: linked assets are assigned to different people ({assigned_ids_str}). '
-                f'Assignment was NOT automatically synced — please resolve manually.'
-            )
-            return
-
-        # If trigger asset is assigned, sync others
-        if trigger_asset.assigned_to_id and trigger_asset.status and trigger_asset.status.name not in SKIP_STATUSES:
-            in_use_status = StatusOption.objects.filter(name='In Use').first()
-            for a in eligible:
-                if a.pk != trigger_asset.pk and (a.assigned_to_id != trigger_asset.assigned_to_id or (in_use_status and a.status_id != in_use_status.pk)):
-                    Asset.objects.filter(pk=a.pk).update(
-                        assigned_to=trigger_asset.assigned_to,
-                        department=trigger_asset.department,
-                        status=in_use_status,
-                    )
-        elif trigger_asset.department_id and not trigger_asset.assigned_to_id:
-            # Department-level assignment
-            for a in eligible:
-                if a.pk != trigger_asset.pk and a.department_id != trigger_asset.department_id:
-                    Asset.objects.filter(pk=a.pk).update(department=trigger_asset.department)
-
     linked_count = 0
     already_linked = 0
 
@@ -476,35 +419,24 @@ def asset_link(request, pk):
         if not linked_asset:
             continue
 
-        # Gather existing chains before linking
-        chain_a = get_chain(asset)
-        chain_b = get_chain(linked_asset)
-        combined_chain = chain_a | chain_b  # union
+        _, created = create_bidirectional_link(
+            asset,
+            linked_asset,
+            notes=notes,
+            created_by=request.user,
+        )
+        if created:
+            linked_count += 1
+        else:
+            already_linked += 1
 
-        # Create bidirectional links for all cross-chain pairs (chain-link propagation)
-        for pk_a in chain_a:
-            for pk_b in chain_b:
-                if pk_a == pk_b:
-                    continue
-                a_obj = Asset.objects.filter(pk=pk_a).first()
-                b_obj = Asset.objects.filter(pk=pk_b).first()
-                if not a_obj or not b_obj:
-                    continue
-                _, c1 = AssetLink.objects.get_or_create(
-                    asset=a_obj, linked_asset=b_obj,
-                    defaults={'notes': notes, 'created_by': request.user}
-                )
-                AssetLink.objects.get_or_create(
-                    asset=b_obj, linked_asset=a_obj,
-                    defaults={'notes': notes, 'created_by': request.user}
-                )
-                if c1:
-                    linked_count += 1
-                else:
-                    already_linked += 1
-
-        # Auto-assign sync after merging chains
-        sync_chain(combined_chain, asset)
+    conflicts = synchronize_healthy_chain(asset, updated_by=request.user)
+    if conflicts:
+        messages.warning(
+            request,
+            f'Conflict detected: linked assets are assigned to different people ({", ".join(conflicts)}). '
+            'Assignment was not automatically synchronized.',
+        )
 
     if linked_count > 0:
         messages.success(request, f'Successfully linked {linked_count} asset pair(s).')
