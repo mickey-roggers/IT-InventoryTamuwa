@@ -71,6 +71,14 @@ class MaintenanceLog(models.Model):
         related_name='maintenance_logs',
         verbose_name="Requisition No."
     )
+    issue = models.ForeignKey(
+        'issues.Issue',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='maintenance_logs',
+        help_text="Optional issue that led to this maintenance work",
+    )
     # New field linking to Technician model
     performed_by = models.ForeignKey(
         'technicians.Technician',

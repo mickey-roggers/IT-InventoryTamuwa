@@ -53,9 +53,20 @@
 
         <div class="row mb-3">
             <div class="col-md-6">
+                <strong>Linked Issue:</strong><br>
+                {% if log.issue %}
+                <a href="{% url 'issues:issue_detail' log.issue.pk %}">{{ log.issue.title }}</a>
+                {% else %}
+                <span class="text-muted">—</span>
+                {% endif %}
+            </div>
+            <div class="col-md-6">
                 <strong>Date Reported:</strong><br>
                 {{ log.date_reported|date:"d/m/Y" }}
             </div>
+        </div>
+
+        <div class="row mb-3">
             <div class="col-md-6">
                 <strong>Date Completed:</strong><br>
                 {{ log.date_completed|date:"d/m/Y"|default:"Not completed" }}

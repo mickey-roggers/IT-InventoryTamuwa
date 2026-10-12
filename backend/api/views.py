@@ -459,14 +459,14 @@ class MaintenanceLogViewSet(viewsets.ModelViewSet):
     destroy: Delete a maintenance log
     """
     queryset = (
-        MaintenanceLog.objects.select_related("asset", "action_taken", "performed_by")
+        MaintenanceLog.objects.select_related("asset", "action_taken", "performed_by", "issue")
         .all()
         .order_by("-timestamp")
     )
     serializer_class = MaintenanceLogSerializer
     permission_classes = [IsAdminOrReadOnly]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ["asset__alias_name", "asset__asset_id", "description", "notes", "performed_by__technician_name"]
+    search_fields = ["asset__alias_name", "asset__asset_id", "issue__title", "description", "notes", "performed_by__technician_name"]
     ordering_fields = ["timestamp", "date_reported", "date_completed", "cost_of_repair", "maintenance_status"]
 
     def get_queryset(self):
@@ -474,12 +474,15 @@ class MaintenanceLogViewSet(viewsets.ModelViewSet):
         maintenance_status = self.request.query_params.get("status")
         performed_by = self.request.query_params.get("performed_by")
         asset = self.request.query_params.get("asset")
+        issue = self.request.query_params.get("issue")
         if maintenance_status:
             qs = qs.filter(maintenance_status=maintenance_status)
         if performed_by:
             qs = qs.filter(performed_by_id=performed_by)
         if asset:
             qs = qs.filter(asset_id=asset)
+        if issue:
+            qs = qs.filter(issue_id=issue)
         return qs
 
     def perform_create(self, serializer):
@@ -846,6 +849,15 @@ class IssueSerializer(serializers.ModelSerializer):
     class Meta:
         model = Issue
         fields = '__all__'
+
+    def validate_asset(self, asset):
+        if self.instance and asset:
+            has_other_asset = self.instance.maintenance_logs.exclude(asset=asset).exists()
+            if has_other_asset:
+                raise serializers.ValidationError(
+                    "This issue has maintenance records linked to a different asset."
+                )
+        return asset
 
 class IssueCommentSerializer(serializers.ModelSerializer):
     author_username = serializers.CharField(source='author.username', read_only=True, default=None)

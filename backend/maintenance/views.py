@@ -21,7 +21,7 @@ def maintenance_list(request):
         return redirect('maintenance:list')
     
     logs = MaintenanceLog.objects.select_related(
-        'asset', 'action_taken', 'reported_by', 'performed_by', 'requisition'
+        'asset', 'action_taken', 'reported_by', 'performed_by', 'requisition', 'issue'
     ).order_by('-timestamp')
     
     # Get all active technicians for the filter dropdown
@@ -111,6 +111,9 @@ def maintenance_create(request):
         asset_id = request.GET.get('asset')
         if asset_id:
             initial['asset'] = asset_id
+        issue_id = request.GET.get('issue')
+        if issue_id:
+            initial['issue'] = issue_id
         form = MaintenanceLogForm(initial=initial)
 
     return render(request, 'maintenance/form.html', {'form': form, 'title': 'Add Maintenance Log'})

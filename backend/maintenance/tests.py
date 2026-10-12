@@ -9,6 +9,8 @@ from django.contrib.auth.models import User
 
 from assets.models import Asset, Category, StatusOption, Department, Person
 from maintenance.models import MaintenanceLog, ActionTakenOption
+from maintenance.serializers import MaintenanceLogSerializer
+from issues.models import Issue
 
 
 def make_status(name="Available"):
@@ -93,6 +95,31 @@ class MaintenanceLogModelTest(TestCase):
             maintenance_status="Open",
         )
         self.assertEqual(log.action_taken.name, "Waiting Approval")
+
+    def test_log_can_optionally_link_an_issue(self):
+        asset = make_asset("MNT-ISSUE-001", user=self.user)
+        issue = Issue.objects.create(title="Broken keyboard", asset=asset, reported_by=self.user)
+        log = MaintenanceLog.objects.create(
+            asset=asset,
+            issue=issue,
+            date_reported=datetime.date.today(),
+            description="Replace keyboard",
+        )
+        self.assertEqual(log.issue, issue)
+        self.assertEqual(list(issue.maintenance_logs.all()), [log])
+
+    def test_serializer_rejects_issue_for_a_different_asset(self):
+        asset = make_asset("MNT-ISSUE-002", user=self.user)
+        other_asset = make_asset("MNT-ISSUE-003", user=self.user)
+        issue = Issue.objects.create(title="Other asset issue", asset=other_asset)
+        serializer = MaintenanceLogSerializer(data={
+            "asset": asset.asset_id,
+            "issue": issue.pk,
+            "date_reported": datetime.date.today(),
+            "description": "Inspect device",
+        })
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("issue", serializer.errors)
 
     def test_close_log_sets_date_completed(self):
         asset = make_asset("MNT-003", user=self.user)

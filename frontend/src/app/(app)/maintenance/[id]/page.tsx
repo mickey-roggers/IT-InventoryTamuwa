@@ -15,6 +15,7 @@ import { apiFetch, unpackResults } from "@/lib/api";
 import { assetDisplayName, assetOptionLabel, formatCurrency, formatDate } from "@/lib/format";
 import type {
   Asset,
+  Issue,
   MaintenanceLog,
   Paginated,
   Requisition,
@@ -50,6 +51,10 @@ export default function MaintenanceDetailPage() {
   );
   const { data: users } = useSWR<Paginated<User> | User[]>(
     "users/?page_size=200",
+    apiFetch,
+  );
+  const { data: issues } = useSWR<Paginated<Issue> | Issue[]>(
+    "issues/?page_size=200",
     apiFetch,
   );
   if (isLoading) return <Skeleton className="h-[32rem]" />;
@@ -147,6 +152,17 @@ export default function MaintenanceDetailPage() {
       })),
     },
     {
+      name: "issue",
+      label: "Related issue",
+      type: "select" as const,
+      nullable: true,
+      defaultValue: record.issue,
+      options: unpackResults(issues).map((item) => ({
+        label: item.title,
+        value: String(item.id),
+      })),
+    },
+    {
       name: "cost_of_repair",
       label: "Repair cost (KES)",
       type: "number" as const,
@@ -236,6 +252,19 @@ export default function MaintenanceDetailPage() {
                     href={`/requisitions/${record.requisition}`}
                   >
                     Open requisition
+                  </Link>
+                ) : (
+                  "—"
+                ),
+              },
+              {
+                label: "Related issue",
+                value: record.issue ? (
+                  <Link
+                    className="text-primary hover:underline"
+                    href={`/issues/${record.issue}`}
+                  >
+                    {unpackResults(issues).find((issue) => issue.id === record.issue)?.title || "Open issue"}
                   </Link>
                 ) : (
                   "—"

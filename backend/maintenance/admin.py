@@ -12,15 +12,15 @@ class ActionTakenOptionAdmin(admin.ModelAdmin):
 @admin.register(MaintenanceLog)
 class MaintenanceLogAdmin(admin.ModelAdmin):
     list_display = [
-        'asset', 'date_reported', 'maintenance_status',
+        'asset', 'issue', 'date_reported', 'maintenance_status',
         'action_taken', 'cost_of_repair', 'date_completed'
     ]
     list_filter = ['maintenance_status', 'date_reported', 'action_taken']
-    search_fields = ['asset__asset_id', 'description']
+    search_fields = ['asset__asset_id', 'issue__title', 'description']
     readonly_fields = ['timestamp', 'created_at', 'updated_at']
     fieldsets = (
         ('Asset Information', {
-            'fields': ('asset', 'previous_assigned_user')
+            'fields': ('asset', 'issue', 'previous_assigned_person')
         }),
         ('Maintenance Details', {
             'fields': (
@@ -29,7 +29,10 @@ class MaintenanceLogAdmin(admin.ModelAdmin):
             )
         }),
         ('Personnel', {
-            'fields': ('reported_by', 'completed_by')
+            'fields': ('reported_by', 'completed_by', 'performed_by')
+        }),
+        ('Procurement', {
+            'fields': ('requisition',)
         }),
         ('Additional Notes', {
             'fields': ('notes',)

@@ -109,6 +109,7 @@ export interface MaintenanceLog {
   reported_by: string | null
   notes: string
   requisition: number | null
+  issue: number | null
   completed_by: string | null
   updated_at: string
 }

@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiFetch, unpackResults } from "@/lib/api";
 import { assetDisplayName, assetOptionLabel, formatDate } from "@/lib/format";
-import type { Asset, Comment, Department, Issue, Paginated } from "@/lib/types";
+import type { Asset, Comment, Department, Issue, MaintenanceLog, Paginated } from "@/lib/types";
 
 export default function IssueDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -35,6 +35,9 @@ export default function IssueDetailPage() {
     "departments/?page_size=200",
     apiFetch,
   );
+  const { data: maintenance } = useSWR<
+    Paginated<MaintenanceLog> | MaintenanceLog[]
+  >(`maintenance-logs/?issue=${id}&page_size=200`, apiFetch);
   if (isLoading) return <Skeleton className="h-[32rem]" />;
   if (error || !issue)
     return (
@@ -159,6 +162,33 @@ export default function IssueDetailPage() {
               { label: "Updated", value: formatDate(issue.updated_at, true) },
             ]}
           />
+        </DetailCard>
+      </div>
+      <div className="mt-4">
+        <DetailCard title="Linked maintenance">
+          {unpackResults(maintenance).length ? (
+            <div className="space-y-2">
+              {unpackResults(maintenance).map((item) => (
+                <Link
+                  key={item.id}
+                  href={`/maintenance/${item.id}`}
+                  className="block rounded-lg border p-3 hover:bg-muted"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium">{formatDate(item.date_reported)}</span>
+                    <StatusBadge value={item.maintenance_status} />
+                  </div>
+                  <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                    {item.description}
+                  </p>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <p className="py-6 text-center text-muted-foreground">
+              No maintenance records are linked to this issue.
+            </p>
+          )}
         </DetailCard>
       </div>
       <div className="mt-4">

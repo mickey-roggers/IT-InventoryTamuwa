@@ -92,6 +92,7 @@ class MaintenanceLogSerializer(serializers.ModelSerializer):
             "completed_by_id",
             "notes",
             "requisition",
+            "issue",
             "created_at",
             "updated_at",
         ]
@@ -103,6 +104,12 @@ class MaintenanceLogSerializer(serializers.ModelSerializer):
         if reported and completed and completed < reported:
             raise serializers.ValidationError({
                 "date_completed": "Date completed cannot be before date reported."
+            })
+        asset = attrs.get("asset", getattr(self.instance, "asset", None))
+        issue = attrs.get("issue", getattr(self.instance, "issue", None))
+        if issue and issue.asset_id and asset and issue.asset_id != asset.pk:
+            raise serializers.ValidationError({
+                "issue": "The linked issue belongs to a different asset."
             })
         return attrs
 

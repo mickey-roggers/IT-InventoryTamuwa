@@ -9,7 +9,7 @@ class MaintenanceLogForm(forms.ModelForm):
         fields = [
             'asset', 'timestamp', 'date_reported', 'date_completed', 'description',
             'action_taken', 'cost_of_repair', 'maintenance_status',
-            'performed_by', 'requisition', 'notes'
+            'performed_by', 'requisition', 'issue', 'notes'
         ]
         widgets = {
             'asset': forms.Select(attrs={'class': 'form-control'}),
@@ -31,6 +31,7 @@ class MaintenanceLogForm(forms.ModelForm):
             'maintenance_status': forms.Select(attrs={'class': 'form-control'}),
             'performed_by': forms.Select(attrs={'class': 'form-control'}),
             'requisition': forms.Select(attrs={'class': 'form-control'}),
+            'issue': forms.Select(attrs={'class': 'form-control'}),
             'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
         }
 
@@ -38,16 +39,19 @@ class MaintenanceLogForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         from requisition.models import Requisition
         from technicians.models import Technician
+        from issues.models import Issue
         self.fields['asset'].queryset = Asset.objects.filter(is_deleted=False).order_by('asset_id')
         self.fields['action_taken'].queryset = ActionTakenOption.objects.filter(is_active=True).order_by('name')
         self.fields['performed_by'].queryset = Technician.objects.filter(is_active=True).order_by('company_name', 'technician_name')
         self.fields['requisition'].queryset = Requisition.objects.all().order_by('-created_at')
+        self.fields['issue'].queryset = Issue.objects.select_related('asset').order_by('-created_at')
         self.fields['action_taken'].required = False
         self.fields['timestamp'].required = False
         self.fields['date_completed'].required = False
         self.fields['cost_of_repair'].required = False
         self.fields['performed_by'].required = False
         self.fields['requisition'].required = False
+        self.fields['issue'].required = False
         self.fields['notes'].required = False
 
     def clean(self):
@@ -59,4 +63,8 @@ class MaintenanceLogForm(forms.ModelForm):
                 'date_completed',
                 'Date completed cannot be before date reported.'
             )
+        asset = cleaned_data.get('asset')
+        issue = cleaned_data.get('issue')
+        if asset and issue and issue.asset_id and issue.asset_id != asset.pk:
+            self.add_error('issue', 'The linked issue belongs to a different asset.')
         return cleaned_data
