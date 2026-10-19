@@ -96,6 +96,21 @@ class MaintenanceLogModelTest(TestCase):
         )
         self.assertEqual(log.action_taken.name, "Waiting Approval")
 
+    def test_serializer_includes_asset_alias_name(self):
+        asset = make_asset("MNT-ALIAS-001", user=self.user)
+        asset.alias_name = "Reception laptop"
+        asset.save()
+        log = MaintenanceLog.objects.create(
+            asset=asset,
+            date_reported=datetime.date.today(),
+            description="Battery check",
+        )
+
+        self.assertEqual(
+            MaintenanceLogSerializer(log).data["asset_alias_name"],
+            "Reception laptop",
+        )
+
     def test_log_can_optionally_link_an_issue(self):
         asset = make_asset("MNT-ISSUE-001", user=self.user)
         issue = Issue.objects.create(title="Broken keyboard", asset=asset, reported_by=self.user)

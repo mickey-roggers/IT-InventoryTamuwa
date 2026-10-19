@@ -24,6 +24,7 @@ class MaintenanceLogSerializer(serializers.ModelSerializer):
     asset = serializers.SlugRelatedField(
         slug_field="asset_id", queryset=Asset.objects.all()
     )
+    asset_alias_name = serializers.CharField(source="asset.alias_name", read_only=True)
     action_taken = ActionTakenOptionSerializer(read_only=True)
     action_taken_id = serializers.PrimaryKeyRelatedField(
         queryset=ActionTakenOption.objects.filter(is_active=True),
@@ -74,6 +75,7 @@ class MaintenanceLogSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "asset",
+            "asset_alias_name",
             "timestamp",
             "date_reported",
             "date_completed",

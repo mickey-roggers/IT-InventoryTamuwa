@@ -4,7 +4,7 @@ import useSWR from "swr"
 import { ResourcePage } from "@/components/resource-page"
 import { StatusBadge } from "@/components/status-badge"
 import { apiFetch, unpackResults } from "@/lib/api"
-import { assetDisplayName, assetOptionLabel, formatCurrency, formatDate } from "@/lib/format"
+import { assetOptionLabel, formatCurrency, formatDate } from "@/lib/format"
 import type { Asset, Issue, MaintenanceLog, Paginated, Requisition, Technician } from "@/lib/types"
 
 type ActionOption = { id: number; name: string }
@@ -34,7 +34,7 @@ export default function MaintenancePage() {
       { name: "notes", label: "Notes", type: "textarea" },
     ] }}
     columns={[
-      { label: "Asset", render: (item) => { const asset = unpackResults(assets).find((value) => value.asset_id === item.asset); return asset ? <div><p className="font-semibold">{assetDisplayName(asset)}</p><p className="font-mono text-xs text-muted-foreground">{asset.asset_id}</p></div> : <span className="font-mono font-semibold">{item.asset}</span> } },
+      { label: "Alias name", render: (item) => <div><p className="font-semibold">{item.asset_alias_name || item.asset}</p>{item.asset_alias_name && <p className="font-mono text-xs text-muted-foreground">{item.asset}</p>}</div> },
       { label: "Reported", render: (item) => formatDate(item.date_reported) },
       { label: "Issue", render: (item) => <p className="max-w-sm truncate">{item.description}</p> },
       { label: "Linked issue", render: (item) => unpackResults(issues).find((issue) => issue.id === item.issue)?.title || "—" },

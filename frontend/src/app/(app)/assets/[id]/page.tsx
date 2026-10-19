@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import {
   ArrowLeft,
@@ -61,6 +61,11 @@ type Assignment = {
 
 export default function AssetDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
+  const requestedReturnTo = searchParams.get("returnTo");
+  const assetsHref = requestedReturnTo === "/assets" || requestedReturnTo?.startsWith("/assets?")
+    ? requestedReturnTo
+    : "/assets";
   const { user } = useAuth();
   const {
     data: asset,
@@ -113,7 +118,7 @@ export default function AssetDetailPage() {
       <div className="rounded-xl border bg-card p-12 text-center">
         <p className="font-semibold">Asset not found</p>
         <Button asChild variant="outline" className="mt-4">
-          <Link href="/assets">Back to assets</Link>
+          <Link href={assetsHref}>Back to assets</Link>
         </Button>
       </div>
     );
@@ -260,7 +265,7 @@ export default function AssetDetailPage() {
   return (
     <>
       <Button asChild variant="ghost" className="mb-4 -ml-2">
-        <Link href="/assets">
+        <Link href={assetsHref}>
           <ArrowLeft />
           Back to assets
         </Link>
@@ -274,7 +279,7 @@ export default function AssetDetailPage() {
             <StatusBadge value={asset.status.name} className="px-3 py-1" />
             <RecordActions
               endpoint={`assets/${id}/`}
-              backHref="/assets"
+              backHref={assetsHref}
               label="Asset"
               fields={fields}
               onChanged={() => mutate()}

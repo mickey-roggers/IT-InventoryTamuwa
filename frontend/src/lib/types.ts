@@ -98,6 +98,7 @@ export interface DashboardStats {
 export interface MaintenanceLog {
   id: number
   asset: string
+  asset_alias_name: string
   timestamp: string
   date_reported: string
   date_completed: string | null

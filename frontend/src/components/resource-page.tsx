@@ -1,7 +1,8 @@
 "use client"
 
 import { useDeferredValue, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useEffect } from "react"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import useSWR from "swr"
 import { ChevronLeft, ChevronRight, Download, Search, X } from "lucide-react"
 
@@ -19,7 +20,7 @@ import { cn } from "@/lib/utils"
 
 export type Column<T> = {
   label: string
-  render: (item: T) => React.ReactNode
+  render: (item: T, context: { refresh: () => void; rowHref?: string }) => React.ReactNode
   className?: string
 }
 
@@ -29,14 +30,34 @@ export type ResourceFilter = {
   options: { label: string; value: string }[]
 }
 
-export function ResourcePage<T>({ title, description, eyebrow, endpoint, searchPlaceholder, emptyMessage, columns, create, rowHref, filters = [], ordering = [], exportUrl }: { title: string; description: string; eyebrow?: string; endpoint: string; searchPlaceholder: string; emptyMessage: string; columns: Column<T>[]; create?: { title: string; description: string; fields: FormField[]; buttonLabel?: string; adminOnly?: boolean; transformPayload?: (payload: Record<string, unknown>) => Record<string, unknown> }; rowHref?: (item: T) => string; filters?: ResourceFilter[]; ordering?: { label: string; value: string }[]; exportUrl?: string }) {
+export function ResourcePage<T>({ title, description, eyebrow, endpoint, searchPlaceholder, emptyMessage, columns, create, rowHref, filters = [], ordering = [], exportUrl, preserveListState = false }: { title: string; description: string; eyebrow?: string; endpoint: string; searchPlaceholder: string; emptyMessage: string; columns: Column<T>[]; create?: { title: string; description: string; fields: FormField[]; buttonLabel?: string; adminOnly?: boolean; transformPayload?: (payload: Record<string, unknown>) => Record<string, unknown> }; rowHref?: (item: T) => string; filters?: ResourceFilter[]; ordering?: { label: string; value: string }[]; exportUrl?: string; preserveListState?: boolean }) {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const { user } = useAuth()
-  const [search, setSearch] = useState("")
-  const [filterValues, setFilterValues] = useState<Record<string, string>>({})
-  const [order, setOrder] = useState("")
+  const [search, setSearch] = useState(() => searchParams.get("search") || "")
+  const [filterValues, setFilterValues] = useState<Record<string, string>>(() => Object.fromEntries(filters.map((filter) => [filter.name, searchParams.get(filter.name) || ""])))
+  const [order, setOrder] = useState(() => searchParams.get("ordering") || "")
   const deferredSearch = useDeferredValue(search)
-  const [page, setPage] = useState(1)
+  const [page, setPage] = useState(() => {
+    const requestedPage = Number(searchParams.get("page") || "1")
+    return Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1
+  })
+  const viewQuery = new URLSearchParams()
+  if (search) viewQuery.set("search", search)
+  Object.entries(filterValues).forEach(([name, value]) => { if (value) viewQuery.set(name, value) })
+  if (order) viewQuery.set("ordering", order)
+  if (page > 1) viewQuery.set("page", String(page))
+  const viewQueryString = viewQuery.toString()
+  const currentQueryString = searchParams.toString()
+  const listHref = `${pathname}${viewQueryString ? `?${viewQueryString}` : ""}`
+
+  useEffect(() => {
+    if (currentQueryString !== viewQueryString) {
+      router.replace(listHref, { scroll: false })
+    }
+  }, [currentQueryString, listHref, router, viewQueryString])
+
   const query = new URLSearchParams({ page: String(page) })
   if (deferredSearch) query.set("search", deferredSearch)
   Object.entries(filterValues).forEach(([name, value]) => { if (value) query.set(name, value) })
@@ -50,6 +71,12 @@ export function ResourcePage<T>({ title, description, eyebrow, endpoint, searchP
   const isAdmin = Boolean(user?.is_staff || user?.is_superuser || user?.profile?.role === "admin" || user?.profile?.role === "super_admin")
   const canCreate = create && (!create.adminOnly || isAdmin)
   const hasActiveFilters = Boolean(search || order || Object.values(filterValues).some(Boolean))
+
+  function detailHref(item: T) {
+    const href = rowHref?.(item)
+    if (!href || !preserveListState) return href
+    return `${href}${href.includes("?") ? "&" : "?"}returnTo=${encodeURIComponent(listHref)}`
+  }
 
   async function downloadExport() {
     if (!exportUrl) return
@@ -85,7 +112,7 @@ export function ResourcePage<T>({ title, description, eyebrow, endpoint, searchP
           ) : rows.length === 0 ? (
             <div className="p-14 text-center"><p className="font-medium">Nothing here yet</p><p className="mt-1 text-sm text-muted-foreground">{emptyMessage}</p></div>
           ) : (
-            <div className="overflow-x-auto"><Table><TableHeader><TableRow>{columns.map((column, index) => <TableHead key={index} className={column.className}>{column.label}</TableHead>)}</TableRow></TableHeader><TableBody>{rows.map((item, rowIndex) => { const href = rowHref?.(item); return <TableRow key={(item as { id?: string | number }).id ?? rowIndex} tabIndex={href ? 0 : undefined} className={cn(href && "cursor-pointer hover:bg-muted/60")} onClick={() => href && router.push(href)} onKeyDown={(event) => { if (href && (event.key === "Enter" || event.key === " ")) router.push(href) }}>{columns.map((column, index) => <TableCell key={index} className={column.className}>{column.render(item)}</TableCell>)}</TableRow> })}</TableBody></Table></div>
+            <div className="overflow-x-auto"><Table><TableHeader><TableRow>{columns.map((column, index) => <TableHead key={index} className={column.className}>{column.label}</TableHead>)}</TableRow></TableHeader><TableBody>{rows.map((item, rowIndex) => { const href = detailHref(item); return <TableRow key={(item as { id?: string | number }).id ?? rowIndex} tabIndex={href ? 0 : undefined} className={cn(href && "cursor-pointer hover:bg-muted/60")} onClick={(event) => { if (href && !(event.target as HTMLElement).closest("a, button, input, select, textarea, [role='button']")) router.push(href) }} onKeyDown={(event) => { if (href && event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) router.push(href) }}>{columns.map((column, index) => <TableCell key={index} className={column.className}>{column.render(item, { refresh: () => { void mutate() }, rowHref: href })}</TableCell>)}</TableRow> })}</TableBody></Table></div>
           )}
         </CardContent>
         {(hasPrevious || hasNext) && <div className="flex items-center justify-end gap-2 border-t px-4 py-3"><Button variant="outline" size="sm" disabled={!hasPrevious} onClick={() => setPage((value) => Math.max(1, value - 1))}><ChevronLeft />Previous</Button><span className="px-2 font-mono text-xs text-muted-foreground">Page {page}</span><Button variant="outline" size="sm" disabled={!hasNext} onClick={() => setPage((value) => value + 1)}>Next<ChevronRight /></Button></div>}
