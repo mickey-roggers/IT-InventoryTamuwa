@@ -288,6 +288,9 @@ class AssetLinkHistory(models.Model):
     linked_at = models.DateTimeField(null=True, blank=True)
     unlinked_at = models.DateTimeField(default=timezone.now)
     unlinked_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    attention_required = models.BooleanField(default=False, db_index=True)
+    attention_resolved_at = models.DateTimeField(null=True, blank=True)
+    attention_resolution = models.CharField(max_length=255, blank=True)
 
     class Meta:
         ordering = ['-unlinked_at']

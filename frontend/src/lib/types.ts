@@ -293,6 +293,9 @@ export interface AssetLinkHistory {
   linked_at: string | null
   unlinked_at: string
   unlinked_by_username: string | null
+  attention_required: boolean
+  attention_resolved_at: string | null
+  attention_resolution: string
 }
 
 export interface AssetQuantity {

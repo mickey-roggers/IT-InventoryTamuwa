@@ -128,7 +128,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const isAdmin = Boolean(user?.is_staff || user?.is_superuser || user?.profile?.role === "admin" || user?.profile?.role === "super_admin")
-  const { data: notifications } = useSWR<{ count: number }>("system-alerts/", apiFetch)
+  const { data: notifications } = useSWR<{ count: number }>("system-alerts/", apiFetch, { refreshInterval: 30_000 })
   const unread = notifications?.count || 0
   const initials = `${user?.first_name?.[0] ?? ""}${user?.last_name?.[0] ?? user?.username?.[0] ?? "U"}`.toUpperCase()
 

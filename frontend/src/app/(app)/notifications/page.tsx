@@ -27,7 +27,7 @@ export default function NotificationsPage() {
   const alerts = data?.results || []
 
   return <>
-    <PageHeader eyebrow="Alerts hub" title="Notifications" description="Critical issues, stale requests, bought-item queues, long repairs, missing assets, and delayed projects." />
+    <PageHeader eyebrow="Alerts hub" title="Notifications" description="Critical issues, broken in-use asset links, stale requests, bought-item queues, long repairs, missing assets, and delayed projects." />
     <div className="mb-4 grid gap-3 sm:grid-cols-3">
       {(["danger", "warning", "info"] as const).map((level) => <Card key={level}><CardContent className="flex items-center justify-between p-4"><span className="text-sm capitalize text-muted-foreground">{level}</span><span className="font-mono text-2xl font-semibold">{data?.counts[level] || 0}</span></CardContent></Card>)}
     </div>

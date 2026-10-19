@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import useSWR from "swr";
+import useSWR, { useSWRConfig } from "swr";
 import { ExternalLink } from "lucide-react";
 
 import { CreateResourceDialog } from "@/components/create-resource-dialog";
@@ -31,6 +31,7 @@ import type {
 
 export default function AssetLinksPage() {
   const { user } = useAuth();
+  const { mutate: mutateCache } = useSWRConfig();
   const { data, isLoading, mutate } = useSWR<
     Paginated<AssetLink> | AssetLink[]
   >("asset-links/?page_size=200", apiFetch);
@@ -38,7 +39,7 @@ export default function AssetLinksPage() {
     "assets/?page_size=200",
     apiFetch,
   );
-  const { data: history } = useSWR<
+  const { data: history, mutate: mutateHistory } = useSWR<
     Paginated<AssetLinkHistory> | AssetLinkHistory[]
   >("asset-link-history/?recent=true&page_size=50", apiFetch);
   const assetOptions = unpackResults(assets).map((asset) => ({
@@ -60,6 +61,11 @@ export default function AssetLinksPage() {
     user?.profile?.role === "admin" ||
     user?.profile?.role === "super_admin",
   );
+  const refreshLinks = () => {
+    void mutate();
+    void mutateHistory();
+    void mutateCache("system-alerts/");
+  };
 
   return (
     <>
@@ -92,7 +98,7 @@ export default function AssetLinksPage() {
                 },
                 { name: "notes", label: "Notes", type: "textarea" },
               ]}
-              onCreated={() => mutate()}
+              onCreated={refreshLinks}
             />
           ) : undefined
         }
@@ -167,7 +173,7 @@ export default function AssetLinksPage() {
                               <DeleteResourceButton
                                 endpoint={`asset-links/${link.id}/`}
                                 label="Asset link"
-                                onDeleted={() => mutate()}
+                                onDeleted={refreshLinks}
                                 iconOnly
                               />
                             )}
@@ -201,6 +207,7 @@ export default function AssetLinksPage() {
                   <TableHead>Asset</TableHead>
                   <TableHead>Previously linked asset</TableHead>
                   <TableHead>Unlinked</TableHead>
+                  <TableHead>Follow-up</TableHead>
                   <TableHead>By</TableHead>
                 </TableRow>
               </TableHeader>
@@ -216,6 +223,10 @@ export default function AssetLinksPage() {
                       {item.linked_asset_alias_name && <span className="ml-2 font-mono text-xs text-muted-foreground">{item.linked_asset_display}</span>}
                     </TableCell>
                     <TableCell>{formatDate(item.unlinked_at, true)}</TableCell>
+                    <TableCell>
+                      <StatusBadge value={item.attention_required && !item.attention_resolved_at ? "Needs attention" : "Resolved"} />
+                      {item.attention_resolution && <p className="mt-1 max-w-72 text-xs text-muted-foreground">{item.attention_resolution}</p>}
+                    </TableCell>
                     <TableCell>
                       {item.unlinked_by_username || "System"}
                     </TableCell>

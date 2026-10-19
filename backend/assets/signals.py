@@ -20,7 +20,10 @@ def auto_update_status_on_assignment(sender, instance, **kwargs):
                 (instance.department and not old_instance.department)
             )
 
-            if assignment_newly_added and instance.status.name != 'In Use':
+            if (
+                assignment_newly_added
+                and instance.status.name not in {'In Use', 'Under Maintenance', 'Missing', 'Retired'}
+            ):
                 in_use_status = StatusOption.objects.filter(name='In Use').first()
                 if in_use_status:
                     instance.status = in_use_status
@@ -45,7 +48,10 @@ def auto_update_status_on_assignment(sender, instance, **kwargs):
     else:  # New asset
         instance._old_instance = None
         # If assigned_to or department is set on creation, set status to "In Use"
-        if instance.assigned_to or instance.department:
+        if (
+            (instance.assigned_to or instance.department)
+            and instance.status.name not in {'Under Maintenance', 'Missing', 'Retired'}
+        ):
             in_use_status = StatusOption.objects.filter(name='In Use').first()
             if in_use_status:
                 instance.status = in_use_status
@@ -116,11 +122,20 @@ def auto_close_maintenance_logs_on_status_change(sender, instance, created, **kw
                         MaintenanceLog.objects.create(
                             asset=instance,
                             date_reported=timezone.now().date(),
-                            description=f'Asset {instance.asset_id} status changed to Under Maintenance.',
+                            description=getattr(
+                                instance,
+                                '_maintenance_description',
+                                f'Asset {instance.asset_id} status changed to Under Maintenance.',
+                            ),
                             action_taken=investigation,
                             maintenance_status='Open',
                             reported_by=instance.updated_by,
                         )
+                    from .linking import resolve_link_incidents
+                    resolve_link_incidents(
+                        [instance.pk],
+                        resolution=f"{instance.asset_id} was placed under maintenance.",
+                    )
 
                 # Status changed AWAY FROM Under Maintenance → auto-close open logs
                 elif old_status.name == 'Under Maintenance':
@@ -139,7 +154,11 @@ def auto_close_maintenance_logs_on_status_change(sender, instance, created, **kw
             MaintenanceLog.objects.create(
                 asset=instance,
                 date_reported=timezone.now().date(),
-                description=f'Asset {instance.asset_id} added under Maintenance.',
+                description=getattr(
+                    instance,
+                    '_maintenance_description',
+                    f'Asset {instance.asset_id} added under Maintenance.',
+                ),
                 action_taken=investigation,
                 maintenance_status='Open',
                 reported_by=instance.created_by,

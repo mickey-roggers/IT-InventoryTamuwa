@@ -133,6 +133,7 @@ export default function BoughtItemsQueuePage() {
                                 { name: "serial_number", label: "Serial number", required: true },
                                 { name: "category_id", label: "Category", type: "select", required: true, options: unpackResults(categories).map((value) => ({ label: value.name, value: String(value.id) })) },
                                 { name: "status_id", label: "Status", type: "select", required: true, options: unpackResults(statuses).map((value) => ({ label: value.name, value: String(value.id) })) },
+                                { name: "maintenance_description", label: "Maintenance issue description", type: "textarea", helpText: "Required when the selected status is Under Maintenance. This creates the maintenance record automatically." },
                                 { name: "assigned_to_id", label: "Assigned to", type: "select", options: unpackResults(people).map((value) => ({ label: value.full_name, value: String(value.id) })) },
                                 { name: "department_id", label: "Department", type: "select", options: unpackResults(departments).map((value) => ({ label: value.name, value: String(value.id) })) },
                                 { name: "purchase_date", label: "Purchase date", type: "date" },

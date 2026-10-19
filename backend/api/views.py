@@ -17,7 +17,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.contrib.auth import password_validation
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Count, F, Q
 from django.utils import timezone
 from datetime import timedelta
 
@@ -33,7 +33,7 @@ from assets.models import (
     AssetLinkHistory,
 )
 from assets.utils import export_assets_excel
-from assets.linking import create_bidirectional_link, synchronize_healthy_chain
+from assets.linking import BLOCKED_LINK_STATUSES, create_bidirectional_link, synchronize_healthy_chain
 from assets.serializers import (
     AssetSerializer,
     CategorySerializer,
@@ -305,10 +305,10 @@ class AssignmentHistoryViewSet(viewsets.ModelViewSet):
     )
     serializer_class = AssignmentHistorySerializer
     permission_classes = [permissions.IsAuthenticated]
-    http_method_names = ["get", "delete", "head", "options"]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_permissions(self):
-        if self.action == "destroy":
+        if self.action in {"create", "update", "partial_update", "destroy"}:
             return [IsStaffUser()]
         return [permissions.IsAuthenticated()]
 
@@ -319,6 +319,97 @@ class AssignmentHistoryViewSet(viewsets.ModelViewSet):
             if value:
                 qs = qs.filter(**{f"{field}_id": value})
         return qs
+
+    @staticmethod
+    def _apply_current_assignment(entry, user):
+        asset = Asset.objects.get(pk=entry.asset_id)
+        in_use = StatusOption.objects.filter(name="In Use").first()
+        updates = {
+            "assigned_to_id": entry.person_id,
+            "department_id": entry.department_id,
+            "updated_by_id": user.pk,
+            "updated_at": timezone.now(),
+        }
+        if asset.assigned_to_id and asset.assigned_to_id != entry.person_id:
+            updates["last_known_person_id"] = asset.assigned_to_id
+        if in_use:
+            updates["status_id"] = in_use.pk
+        Asset.objects.filter(pk=asset.pk).update(**updates)
+        ActivityLog.objects.create(
+            asset=asset,
+            user=user,
+            action="ASSIGN",
+            description=(
+                f"Asset {asset.asset_id} assigned to "
+                f"{entry.person.full_name if entry.person else entry.department.name} "
+                f"from {entry.start_date:%d %b %Y}."
+            ),
+            new_value=entry.person.full_name if entry.person else entry.department.name,
+        )
+        asset.refresh_from_db()
+        synchronize_healthy_chain(asset, updated_by=user)
+
+    @staticmethod
+    def _clear_current_assignment(*, asset_id, person_id, department_id, target_label, user):
+        asset = Asset.objects.get(pk=asset_id)
+        if asset.assigned_to_id != person_id or asset.department_id != department_id:
+            return
+        available = StatusOption.objects.filter(name="Available").first()
+        updates = {
+            "assigned_to_id": None,
+            "department_id": None,
+            "last_known_person_id": person_id or asset.last_known_person_id,
+            "updated_by_id": user.pk,
+            "updated_at": timezone.now(),
+        }
+        if available:
+            updates["status_id"] = available.pk
+        Asset.objects.filter(pk=asset.pk).update(**updates)
+        ActivityLog.objects.create(
+            asset=asset,
+            user=user,
+            action="UNASSIGN",
+            description=f"Current assignment for {asset.asset_id} ended.",
+            old_value=target_label,
+        )
+
+    @transaction.atomic
+    def perform_create(self, serializer):
+        entry = serializer.save()
+        if entry.end_date is None:
+            self._apply_current_assignment(entry, self.request.user)
+
+    @transaction.atomic
+    def perform_update(self, serializer):
+        was_current = serializer.instance.end_date is None
+        previous = {
+            "asset_id": serializer.instance.asset_id,
+            "person_id": serializer.instance.person_id,
+            "department_id": serializer.instance.department_id,
+            "target_label": (
+                serializer.instance.person.full_name
+                if serializer.instance.person
+                else serializer.instance.department.name
+            ),
+        }
+        entry = serializer.save()
+        if entry.end_date is None:
+            self._apply_current_assignment(entry, self.request.user)
+        elif was_current:
+            self._clear_current_assignment(**previous, user=self.request.user)
+
+    @transaction.atomic
+    def perform_destroy(self, instance):
+        was_current = instance.end_date is None
+        previous = {
+            "asset_id": instance.asset_id,
+            "person_id": instance.person_id,
+            "department_id": instance.department_id,
+            "target_label": instance.person.full_name if instance.person else instance.department.name,
+        }
+        instance.delete()
+        if was_current:
+            self._clear_current_assignment(**previous, user=self.request.user)
 
 
 class ActivityLogViewSet(viewsets.ReadOnlyModelViewSet):
@@ -720,6 +811,57 @@ class SystemAlertsView(APIView):
 
         for asset in Asset.objects.filter(is_deleted=False, status__name="Missing").select_related("category").order_by("-updated_at"):
             add("danger", "Assets", f"Missing Asset: {asset.asset_id} — {asset.model_description}", f"Category: {asset.category.name}", f"/assets/{asset.pk}", asset.updated_at)
+
+        broken_links = AssetLinkHistory.objects.filter(
+            attention_required=True,
+            attention_resolved_at__isnull=True,
+        ).select_related("asset", "linked_asset").order_by("-unlinked_at")
+        for broken in broken_links:
+            first = broken.asset.alias_name or broken.asset.asset_id
+            second = broken.linked_asset.alias_name or broken.linked_asset.asset_id
+            add(
+                "danger",
+                "Asset Links",
+                f"Broken in-use link: {first} ↔ {second}",
+                "These items were unlinked while in use. Put the affected equipment under maintenance or link a suitable replacement.",
+                "/asset-links",
+                broken.unlinked_at,
+            )
+
+        incomplete_links = AssetLink.objects.filter(
+            asset_id__lt=F("linked_asset_id"),
+        ).select_related(
+            "asset", "asset__status", "linked_asset", "linked_asset__status"
+        )
+        for link in incomplete_links:
+            first_blocked = link.asset.status.name in BLOCKED_LINK_STATUSES
+            second_blocked = link.linked_asset.status.name in BLOCKED_LINK_STATUSES
+            if first_blocked == second_blocked:
+                continue
+            blocked = link.asset if first_blocked else link.linked_asset
+            working = link.linked_asset if first_blocked else link.asset
+            has_replacement = AssetLink.objects.filter(
+                Q(asset=working, linked_asset__is_deleted=False)
+                | Q(linked_asset=working, asset__is_deleted=False)
+            ).filter(
+                Q(asset=working, linked_asset__status__name__in=BLOCKED_LINK_STATUSES)
+                | Q(linked_asset=working, asset__status__name__in=BLOCKED_LINK_STATUSES)
+            ).count() < AssetLink.objects.filter(
+                Q(asset=working, linked_asset__is_deleted=False)
+                | Q(linked_asset=working, asset__is_deleted=False)
+            ).count()
+            if has_replacement:
+                continue
+            working_name = working.alias_name or working.asset_id
+            blocked_name = blocked.alias_name or blocked.asset_id
+            add(
+                "danger",
+                "Asset Links",
+                f"Linked chain interrupted: {working_name}",
+                f"{blocked_name} is {blocked.status.name}. Link a healthy replacement so these items can work together again.",
+                f"/assets/{working.pk}",
+                blocked.updated_at,
+            )
 
         for project in Project.objects.filter(status="Pending", created_at__date__lte=today - timedelta(days=30)).order_by("created_at"):
             age = (today - project.created_at.date()).days
@@ -1240,8 +1382,19 @@ class AssetLinkViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         reverse = AssetLink.objects.filter(asset=instance.linked_asset, linked_asset=instance.asset).first()
         linked_at = instance.created_at
+        attention_required = (
+            instance.asset.status.name == "In Use"
+            or instance.linked_asset.status.name == "In Use"
+        )
         for source, target in ((instance.asset, instance.linked_asset), (instance.linked_asset, instance.asset)):
-            AssetLinkHistory.objects.create(asset=source, linked_asset=target, notes=instance.notes, linked_at=linked_at, unlinked_by=self.request.user)
+            AssetLinkHistory.objects.create(
+                asset=source,
+                linked_asset=target,
+                notes=instance.notes,
+                linked_at=linked_at,
+                unlinked_by=self.request.user,
+                attention_required=attention_required and source.pk < target.pk,
+            )
         if reverse:
             reverse.delete()
         instance.delete()

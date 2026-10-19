@@ -18,6 +18,8 @@ const tones: Record<string, string> = {
   retired: "border-slate-200 bg-slate-100 text-slate-600",
   "under maintenance": "border-yellow-300 bg-yellow-50 text-yellow-800",
   incomplete: "border-yellow-300 bg-yellow-50 text-yellow-800",
+  "needs attention": "border-red-200 bg-red-50 text-red-700",
+  resolved: "border-emerald-200 bg-emerald-50 text-emerald-700",
 }
 
 export function StatusBadge({ value, className }: { value: string | null | undefined; className?: string }) {

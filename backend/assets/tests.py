@@ -6,14 +6,16 @@ from decimal import Decimal
 from django.test import TestCase, Client
 from django.contrib.auth.models import User
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework import status
 
 from assets.models import (
     Asset, Category, Department, Person,
-    StatusOption, AssignmentHistory, ActivityLog, AssetLink,
+    StatusOption, AssignmentHistory, ActivityLog, AssetLink, AssetLinkHistory,
 )
 from assets.linking import create_bidirectional_link, synchronize_healthy_chain
+from assets.serializers import AssetSerializer
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -209,6 +211,58 @@ class AssetMaintenanceSignalTest(TestCase):
         asset.refresh_from_db()
         self.assertEqual(asset.status.name, "Available")
 
+    def test_status_change_requires_and_uses_maintenance_description(self):
+        from maintenance.models import MaintenanceLog
+
+        asset = make_asset("SIG-DESCRIPTION", user=self.user)
+        maintenance_status = make_status("Under Maintenance")
+        missing_description = AssetSerializer(
+            asset,
+            data={"status_id": maintenance_status.pk},
+            partial=True,
+        )
+        self.assertFalse(missing_description.is_valid())
+        self.assertIn("maintenance_description", missing_description.errors)
+
+        serializer = AssetSerializer(
+            asset,
+            data={
+                "status_id": maintenance_status.pk,
+                "maintenance_description": "Charging port is loose and disconnects intermittently.",
+            },
+            partial=True,
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        serializer.save(updated_by=self.user)
+
+        log = MaintenanceLog.objects.get(asset=asset, maintenance_status="Open")
+        self.assertEqual(
+            log.description,
+            "Charging port is loose and disconnects intermittently.",
+        )
+
+    def test_new_assigned_asset_can_start_under_maintenance_with_description(self):
+        from maintenance.models import MaintenanceLog
+
+        person = make_person("New", "Owner")
+        serializer = AssetSerializer(data={
+            "asset_id": "SIG-NEW-MAINTENANCE",
+            "category_id": make_category().pk,
+            "status_id": make_status("Under Maintenance").pk,
+            "assigned_to_id": person.pk,
+            "model_description": "Damaged new device",
+            "serial_number": "SN-SIG-NEW-MAINTENANCE",
+            "maintenance_description": "Screen was cracked before deployment.",
+        })
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        asset = serializer.save(created_by=self.user, updated_by=self.user)
+
+        self.assertEqual(asset.status.name, "Under Maintenance")
+        self.assertEqual(
+            MaintenanceLog.objects.get(asset=asset).description,
+            "Screen was cracked before deployment.",
+        )
+
 
 class AssetLinkChainTest(TestCase):
     def setUp(self):
@@ -244,6 +298,14 @@ class AssetLinkChainTest(TestCase):
         self.assertEqual(headset.status.name, "Available")
         self.assertEqual(charger.status.name, "Missing")
 
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        alerts = client.get("/api/system-alerts/")
+        self.assertTrue(any(
+            item["category"] == "Asset Links" and "interrupted" in item["title"]
+            for item in alerts.data["results"]
+        ))
+
         create_bidirectional_link(phone, replacement, created_by=self.user)
         synchronize_healthy_chain(phone, updated_by=self.user)
 
@@ -254,6 +316,80 @@ class AssetLinkChainTest(TestCase):
         self.assertEqual(replacement.status.name, "In Use")
         self.assertEqual(replacement.assigned_to, self.person)
         self.assertEqual(headset.status.name, "Available")
+        alerts = client.get("/api/system-alerts/")
+        self.assertFalse(any(
+            item["category"] == "Asset Links" and "PHN-CHAIN" in item["title"]
+            for item in alerts.data["results"]
+        ))
+
+    def test_unlinking_in_use_assets_creates_alert_until_replacement_is_linked(self):
+        phone = make_asset(
+            "PHN-BROKEN-LINK", status=self.in_use, assigned_to=self.person, user=self.user
+        )
+        charger = make_asset(
+            "CHG-BROKEN-LINK", status=self.in_use, assigned_to=self.person, user=self.user
+        )
+        replacement = make_asset("CHG-REPLACEMENT", status=self.available, user=self.user)
+        forward, _ = create_bidirectional_link(phone, charger, created_by=self.user)
+
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        response = client.delete(f"/api/asset-links/{forward.pk}/")
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        incident = AssetLinkHistory.objects.get(attention_required=True)
+        self.assertIsNone(incident.attention_resolved_at)
+        alerts = client.get("/api/system-alerts/")
+        self.assertTrue(any(item["category"] == "Asset Links" for item in alerts.data["results"]))
+
+        create_bidirectional_link(phone, replacement, created_by=self.user)
+        incident.refresh_from_db()
+        self.assertIsNotNone(incident.attention_resolved_at)
+
+
+class AssignmentHistoryAPITest(TestCase):
+    def setUp(self):
+        self.user = make_admin_user("assignment_admin")
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+        self.asset = make_asset("ASSIGN-DATED", user=self.user)
+        self.person = make_person("Mary", "Wanjiku")
+        make_status("In Use")
+
+    def test_can_record_historical_assignment_with_dates(self):
+        response = self.client.post(
+            "/api/assignment-history/",
+            {
+                "asset": self.asset.asset_id,
+                "person_id": self.person.pk,
+                "start_date": "2025-01-01T08:00:00Z",
+                "end_date": "2025-06-30T17:00:00Z",
+                "notes": "Temporary project assignment",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        history = AssignmentHistory.objects.get(pk=response.data["id"])
+        self.assertEqual(history.person, self.person)
+        self.assertIsNotNone(history.end_date)
+
+    def test_open_dated_assignment_becomes_current_asset_assignment(self):
+        response = self.client.post(
+            "/api/assignment-history/",
+            {
+                "asset": self.asset.asset_id,
+                "person_id": self.person.pk,
+                "start_date": timezone.now().isoformat(),
+                "end_date": None,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.asset.refresh_from_db()
+        self.assertEqual(self.asset.assigned_to, self.person)
+        self.assertEqual(self.asset.status.name, "In Use")
 
 
 # ──────────────────────────────────────────────────────────────────────────────

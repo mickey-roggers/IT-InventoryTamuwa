@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
-import useSWR from "swr";
+import useSWR, { useSWRConfig } from "swr";
 import {
   ArrowLeft,
   Calendar,
@@ -15,7 +15,7 @@ import {
 
 import { PageHeader } from "@/components/page-header";
 import { DetailCard } from "@/components/detail-card";
-import { CreateResourceDialog } from "@/components/create-resource-dialog";
+import { CreateResourceDialog, ResourceFormDialog, type FormField } from "@/components/create-resource-dialog";
 import { useAuth } from "@/components/providers/auth-provider";
 import {
   DeleteResourceButton,
@@ -27,7 +27,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiFetch, unpackResults } from "@/lib/api";
-import { assetDisplayName, assetOptionLabel, formatCurrency, formatDate } from "@/lib/format";
+import { assetDisplayName, assetOptionLabel, formatCurrency, formatDate, toDateTimeLocal } from "@/lib/format";
 import type {
   Asset,
   AssetLink,
@@ -66,6 +66,7 @@ export default function AssetDetailPage() {
   const assetsHref = requestedReturnTo === "/assets" || requestedReturnTo?.startsWith("/assets?")
     ? requestedReturnTo
     : "/assets";
+  const { mutate: mutateCache } = useSWRConfig();
   const { user } = useAuth();
   const {
     data: asset,
@@ -203,6 +204,12 @@ export default function AssetDetailPage() {
       })),
     },
     {
+      name: "maintenance_description",
+      label: "Maintenance issue description",
+      type: "textarea" as const,
+      helpText: "Required when changing the status to Under Maintenance. This creates the maintenance record automatically.",
+    },
+    {
       name: "assigned_to_id",
       label: "Assigned to",
       type: "select" as const,
@@ -262,6 +269,54 @@ export default function AssetDetailPage() {
     },
   ];
 
+  const assignmentFields = (assignment?: Assignment): FormField[] => [
+    {
+      name: "person_id",
+      label: "Assigned person",
+      type: "select",
+      nullable: true,
+      defaultValue: assignment?.person?.id,
+      options: unpackResults(people).map((item) => ({
+        label: item.full_name,
+        value: String(item.id),
+      })),
+    },
+    {
+      name: "department_id",
+      label: "Department",
+      type: "select",
+      nullable: true,
+      defaultValue: assignment?.department?.id,
+      options: unpackResults(departments).map((item) => ({
+        label: item.name,
+        value: String(item.id),
+      })),
+    },
+    {
+      name: "start_date",
+      label: "Assigned from",
+      type: "datetime-local",
+      required: true,
+      defaultValue: assignment
+        ? toDateTimeLocal(assignment.start_date)
+        : toDateTimeLocal(new Date().toISOString()),
+    },
+    {
+      name: "end_date",
+      label: "Assigned until",
+      type: "datetime-local",
+      nullable: true,
+      defaultValue: toDateTimeLocal(assignment?.end_date),
+      helpText: "Leave blank while this is the current assignment.",
+    },
+    {
+      name: "notes",
+      label: "Assignment notes",
+      type: "textarea",
+      defaultValue: assignment?.notes,
+    },
+  ];
+
   return (
     <>
       <Button asChild variant="ghost" className="mb-4 -ml-2">
@@ -282,7 +337,7 @@ export default function AssetDetailPage() {
               backHref={assetsHref}
               label="Asset"
               fields={fields}
-              onChanged={() => mutate()}
+              onChanged={() => { void mutate(); void mutateCache("system-alerts/") }}
               adminOnly
             />
           </div>
@@ -357,6 +412,19 @@ export default function AssetDetailPage() {
       </div>
       <div className="mt-4 grid gap-4 xl:grid-cols-2">
         <DetailCard title="Assignment history">
+          {isAdmin && (
+            <div className="mb-3">
+              <CreateResourceDialog
+                title="Dated assignment"
+                description="Record a past assignment or leave the end blank to make it the current assignment. Assignment periods cannot overlap."
+                endpoint="assignment-history/"
+                buttonLabel="Add assignment"
+                fixedValues={{ asset: asset.asset_id }}
+                fields={assignmentFields()}
+                onCreated={() => { void mutateAssignments(); void mutate() }}
+              />
+            </div>
+          )}
           {unpackResults(assignments).length ? (
             <div className="space-y-3">
               {unpackResults(assignments).map((item) => (
@@ -378,14 +446,23 @@ export default function AssetDetailPage() {
                     </p>
                     {item.notes && <p className="mt-2 text-sm">{item.notes}</p>}
                   </div>
-                  {isAdmin && (
+                  {isAdmin && <div className="flex items-center gap-1">
+                    <ResourceFormDialog
+                      title="Edit assignment dates"
+                      description="Adjust who held the asset and the exact assignment period."
+                      endpoint={`assignment-history/${item.id}/`}
+                      method="PATCH"
+                      fields={assignmentFields(item)}
+                      onSaved={() => { void mutateAssignments(); void mutate() }}
+                      trigger={<Button variant="ghost" size="sm">Edit</Button>}
+                    />
                     <DeleteResourceButton
                       endpoint={`assignment-history/${item.id}/`}
                       label="assignment history"
-                      onDeleted={() => void mutateAssignments()}
+                      onDeleted={() => { void mutateAssignments(); void mutate() }}
                       iconOnly
                     />
-                  )}
+                  </div>}
                 </div>
               ))}
             </div>
@@ -419,7 +496,7 @@ export default function AssetDetailPage() {
                   },
                   { name: "notes", label: "Notes", type: "textarea" },
                 ]}
-                onCreated={() => void mutateLinks()}
+                onCreated={() => { void mutateLinks(); void mutateCache("system-alerts/") }}
               />
             </div>
           )}

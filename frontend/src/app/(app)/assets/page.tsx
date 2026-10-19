@@ -46,6 +46,7 @@ export default function AssetsPage() {
       { name: "model_description", label: "Model / description", required: true },
       { name: "category_id", label: "Category", type: "select", required: true, options: unpackResults(categories).map((item) => ({ label: item.name, value: String(item.id) })) },
       { name: "status_id", label: "Status", type: "select", required: true, options: unpackResults(statuses).map((item) => ({ label: item.name, value: String(item.id) })) },
+      { name: "maintenance_description", label: "Maintenance issue description", type: "textarea", helpText: "Required when the selected status is Under Maintenance. This creates the maintenance record automatically." },
       { name: "assigned_to_id", label: "Assigned to", type: "select", options: unpackResults(people).map((item) => ({ label: item.full_name, value: String(item.id) })) },
       { name: "department_id", label: "Department", type: "select", options: unpackResults(departments).map((item) => ({ label: item.name, value: String(item.id) })) },
       { name: "purchase_date", label: "Purchase date", type: "date" },

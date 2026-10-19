@@ -3,10 +3,25 @@
 from django.db.models import Q
 from django.utils import timezone
 
-from .models import ActivityLog, Asset, AssetLink, StatusOption
+from .models import ActivityLog, Asset, AssetLink, AssetLinkHistory, StatusOption
 
 
 BLOCKED_LINK_STATUSES = frozenset({"Missing", "Retired", "Under Maintenance"})
+
+
+def resolve_link_incidents(asset_ids, *, resolution):
+    """Resolve broken-link alerts after maintenance or a replacement link."""
+    asset_ids = set(asset_ids)
+    if not asset_ids:
+        return 0
+    return AssetLinkHistory.objects.filter(
+        Q(asset_id__in=asset_ids) | Q(linked_asset_id__in=asset_ids),
+        attention_required=True,
+        attention_resolved_at__isnull=True,
+    ).update(
+        attention_resolved_at=timezone.now(),
+        attention_resolution=resolution,
+    )
 
 
 def get_chain_ids(asset, *, include_blocked=True):
@@ -52,6 +67,10 @@ def create_bidirectional_link(asset, linked_asset, *, notes="", created_by=None)
         asset=linked_asset,
         linked_asset=asset,
         defaults={"notes": notes, "created_by": created_by},
+    )
+    resolve_link_incidents(
+        [asset.pk, linked_asset.pk],
+        resolution=f"Replacement link created between {asset.asset_id} and {linked_asset.asset_id}.",
     )
     return forward, created
 

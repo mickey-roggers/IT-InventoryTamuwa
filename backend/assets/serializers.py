@@ -1,4 +1,5 @@
 from django.contrib.auth.models import User
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -45,6 +46,11 @@ class PersonSerializer(serializers.ModelSerializer):
 
 class AssetSerializer(serializers.ModelSerializer):
     asset_id = serializers.CharField(required=False, allow_blank=True)
+    maintenance_description = serializers.CharField(
+        write_only=True,
+        required=False,
+        allow_blank=True,
+    )
     requisition_item_id = serializers.IntegerField(write_only=True, required=False)
     category = CategorySerializer(read_only=True)
     category_id = serializers.PrimaryKeyRelatedField(
@@ -86,6 +92,7 @@ class AssetSerializer(serializers.ModelSerializer):
             "id",
             "asset_id",
             "alias_name",
+            "maintenance_description",
             "category",
             "category_id",
             "model_description",
@@ -130,6 +137,18 @@ class AssetSerializer(serializers.ModelSerializer):
             "is_deleted",
             instance.is_deleted if instance else False,
         )
+        status = attrs.get("status", instance.status if instance else None)
+        entering_maintenance = bool(
+            status
+            and status.name == "Under Maintenance"
+            and (not instance or not instance.status or instance.status.name != "Under Maintenance")
+        )
+        if entering_maintenance and not attrs.get("maintenance_description", "").strip():
+            raise serializers.ValidationError({
+                "maintenance_description": (
+                    "Describe the issue when changing an asset to Under Maintenance."
+                )
+            })
 
         serial_number = (serial_number or "").strip()
         if (
@@ -158,6 +177,20 @@ class AssetSerializer(serializers.ModelSerializer):
 
         return attrs
 
+    def create(self, validated_data):
+        maintenance_description = validated_data.pop("maintenance_description", "").strip()
+        instance = Asset(**validated_data)
+        if maintenance_description:
+            instance._maintenance_description = maintenance_description
+        instance.save()
+        return instance
+
+    def update(self, instance, validated_data):
+        maintenance_description = validated_data.pop("maintenance_description", "").strip()
+        if maintenance_description:
+            instance._maintenance_description = maintenance_description
+        return super().update(instance, validated_data)
+
     def validate_purchase_date(self, value):
         if value and (value.year < 1900 or value.year > timezone.now().year + 1):
             raise serializers.ValidationError(
@@ -179,6 +212,13 @@ class AssignmentHistorySerializer(serializers.ModelSerializer):
         required=False,
     )
     department = DepartmentSerializer(read_only=True)
+    department_id = serializers.PrimaryKeyRelatedField(
+        queryset=Department.objects.all(),
+        source="department",
+        write_only=True,
+        allow_null=True,
+        required=False,
+    )
 
     class Meta:
         model = AssignmentHistory
@@ -188,12 +228,43 @@ class AssignmentHistorySerializer(serializers.ModelSerializer):
             "person",
             "person_id",
             "department",
+            "department_id",
             "start_date",
             "end_date",
             "notes",
             "created_at",
         ]
         read_only_fields = ["created_at"]
+
+    def validate(self, attrs):
+        instance = self.instance
+        asset = attrs.get("asset", instance.asset if instance else None)
+        person = attrs.get("person", instance.person if instance else None)
+        department = attrs.get("department", instance.department if instance else None)
+        start = attrs.get("start_date", instance.start_date if instance else None)
+        end = attrs.get("end_date", instance.end_date if instance else None)
+
+        if not person and not department:
+            raise serializers.ValidationError({
+                "person_id": "Select a person or department for this assignment."
+            })
+        if start and end and end < start:
+            raise serializers.ValidationError({
+                "end_date": "The assignment end date cannot be before its start date."
+            })
+
+        if asset and start:
+            overlaps = AssignmentHistory.objects.filter(asset=asset)
+            if instance:
+                overlaps = overlaps.exclude(pk=instance.pk)
+            overlaps = overlaps.filter(Q(end_date__isnull=True) | Q(end_date__gte=start))
+            if end:
+                overlaps = overlaps.filter(start_date__lte=end)
+            if overlaps.exists():
+                raise serializers.ValidationError({
+                    "start_date": "This period overlaps another assignment for the asset."
+                })
+        return attrs
 
 
 class ActivityLogSerializer(serializers.ModelSerializer):
