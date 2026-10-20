@@ -25,7 +25,7 @@ export default function TasksPage() {
       { name: "description", label: "Description", type: "textarea" },
     ] }}
     columns={[
-      { label: "Task", render: (item) => <div><p className="flex items-center gap-2 font-medium">{item.is_overdue && <AlertCircle className="size-4 text-destructive" />}{item.title}</p><p className="mt-0.5 max-w-md truncate text-xs text-muted-foreground">{item.description || "No description"}</p></div> },
+      { label: "Task", render: (item) => <div className={item.status === "Done" ? "text-muted-foreground line-through opacity-70" : undefined}><p className="flex items-center gap-2 font-medium">{item.is_overdue && <AlertCircle className="size-4 text-destructive" />}{item.title}</p><p className="mt-0.5 max-w-md truncate text-xs text-muted-foreground">{item.description || "No description"}</p></div> },
       { label: "Priority", render: (item) => <StatusBadge value={item.priority} /> },
       { label: "Status", render: (item) => <StatusBadge value={item.status} /> },
       { label: "Assignee", render: (item) => item.assigned_to_username || "Unassigned" },

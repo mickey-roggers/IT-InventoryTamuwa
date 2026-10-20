@@ -6,10 +6,11 @@ import { ResourcePage } from "@/components/resource-page"
 import { StatusBadge } from "@/components/status-badge"
 import { formatDate } from "@/lib/format"
 import { apiFetch, unpackResults } from "@/lib/api"
-import type { Category, Paginated, Project } from "@/lib/types"
+import type { Category, Issue, Paginated, Project } from "@/lib/types"
 
 export default function ProjectsPage() {
   const { data: categories } = useSWR<Paginated<Category> | Category[]>("categories/?page_size=200", apiFetch)
+  const { data: issues } = useSWR<Paginated<Issue> | Issue[]>("issues/?page_size=200", apiFetch)
   return <ResourcePage<Project> eyebrow="Planning" title="Projects" description="Coordinate ICT initiatives, priorities, target dates, and outcomes." endpoint="projects/" searchPlaceholder="Search projects…" emptyMessage="No projects have been created."
     rowHref={(item) => `/projects/${item.id}`}
     filters={[{ name: "priority", label: "Priorities", options: ["Low", "Medium", "High"].map((value) => ({ label: value, value })) }, { name: "status", label: "Statuses", options: ["Pending", "Done", "Rejected"].map((value) => ({ label: value, value })) }]}
@@ -19,6 +20,7 @@ export default function ProjectsPage() {
       { name: "date", label: "Target date", type: "date" },
       { name: "priority", label: "Priority", type: "select", required: true, defaultValue: "Medium", options: ["Low", "Medium", "High"].map((value) => ({ label: value, value })) },
       { name: "status", label: "Status", type: "select", required: true, defaultValue: "Pending", options: ["Pending", "Done", "Rejected"].map((value) => ({ label: value, value })) },
+      { name: "linked_issue", label: "Issue that led to this project", type: "select", options: unpackResults(issues).filter((item) => item.status !== "Closed").map((item) => ({ label: item.title, value: String(item.id) })), helpText: "Optional. Use this when the project was opened to address an issue." },
       { name: "description", label: "Description", type: "textarea" },
       { name: "problem_statement", label: "Problem statement", type: "textarea" },
       { name: "cost_breakdown", label: "Cost breakdown", type: "textarea" },

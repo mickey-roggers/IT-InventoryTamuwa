@@ -1,4 +1,5 @@
 from django import forms
+from django.db.models import Q
 from .models import Issue, Project
 from assets.models import Asset, Department, Category
 
@@ -31,7 +32,7 @@ class ProjectForm(forms.ModelForm):
         fields = [
             'title', 'description', 'date', 'problem_statement',
             'cost_breakdown', 'conclusion', 'priority', 'status',
-            'pending_reason', 'rejected_reason', 'categories',
+            'pending_reason', 'rejected_reason', 'categories', 'linked_issue',
         ]
         widgets = {
             'title': forms.TextInput(attrs={'class': 'form-control'}),
@@ -48,6 +49,7 @@ class ProjectForm(forms.ModelForm):
             'pending_reason': forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
             'rejected_reason': forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
             'categories': forms.CheckboxSelectMultiple(),
+            'linked_issue': forms.Select(attrs={'class': 'form-control'}),
         }
 
     def __init__(self, *args, **kwargs):
@@ -61,6 +63,11 @@ class ProjectForm(forms.ModelForm):
         self.fields['rejected_reason'].required = False
         self.fields['categories'].required = False
         self.fields['categories'].queryset = Category.objects.all().order_by('name')
+        self.fields['linked_issue'].required = False
+        linked_issue_id = getattr(self.instance, 'linked_issue_id', None)
+        self.fields['linked_issue'].queryset = Issue.objects.filter(
+            Q(status__in=['Open', 'Monitoring', 'Resolved']) | Q(pk=linked_issue_id)
+        ).order_by('-created_at')
 
     def clean(self):
         cleaned = super().clean()

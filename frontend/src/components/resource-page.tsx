@@ -30,7 +30,7 @@ export type ResourceFilter = {
   options: { label: string; value: string }[]
 }
 
-export function ResourcePage<T>({ title, description, eyebrow, endpoint, searchPlaceholder, emptyMessage, columns, create, rowHref, filters = [], ordering = [], exportUrl, preserveListState = false }: { title: string; description: string; eyebrow?: string; endpoint: string; searchPlaceholder: string; emptyMessage: string; columns: Column<T>[]; create?: { title: string; description: string; fields: FormField[]; buttonLabel?: string; adminOnly?: boolean; transformPayload?: (payload: Record<string, unknown>) => Record<string, unknown> }; rowHref?: (item: T) => string; filters?: ResourceFilter[]; ordering?: { label: string; value: string }[]; exportUrl?: string; preserveListState?: boolean }) {
+export function ResourcePage<T>({ title, description, eyebrow, endpoint, searchPlaceholder, emptyMessage, columns, create, rowHref, filters = [], ordering = [], exportUrl, preserveListState = false }: { title: string; description: string; eyebrow?: string; endpoint: string; searchPlaceholder: string; emptyMessage: string; columns: Column<T>[]; create?: { title: string; description: string; fields?: FormField[]; buttonLabel?: string; adminOnly?: boolean; transformPayload?: (payload: Record<string, unknown>) => Record<string, unknown>; render?: (onCreated: () => void) => React.ReactNode }; rowHref?: (item: T) => string; filters?: ResourceFilter[]; ordering?: { label: string; value: string }[]; exportUrl?: string; preserveListState?: boolean }) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -93,7 +93,7 @@ export function ResourcePage<T>({ title, description, eyebrow, endpoint, searchP
 
   return (
     <>
-      <PageHeader title={title} description={description} eyebrow={eyebrow} actions={(canCreate || exportUrl) ? <div className="flex flex-wrap gap-2">{exportUrl && <Button variant="outline" onClick={() => void downloadExport()}><Download />Export Excel</Button>}{canCreate && <CreateResourceDialog title={create.title} description={create.description} fields={create.fields} buttonLabel={create.buttonLabel} transformPayload={create.transformPayload} endpoint={endpoint} onCreated={() => mutate()} />}</div> : undefined} />
+      <PageHeader title={title} description={description} eyebrow={eyebrow} actions={(canCreate || exportUrl) ? <div className="flex flex-wrap gap-2">{exportUrl && <Button variant="outline" onClick={() => void downloadExport()}><Download />Export Excel</Button>}{canCreate && (create.render ? create.render(() => { void mutate() }) : <CreateResourceDialog title={create.title} description={create.description} fields={create.fields || []} buttonLabel={create.buttonLabel} transformPayload={create.transformPayload} endpoint={endpoint} onCreated={() => mutate()} />)}</div> : undefined} />
       <Card className="overflow-hidden border-border/70 shadow-sm">
         <div className="flex flex-col justify-between gap-3 border-b px-4 py-4 xl:flex-row xl:items-center">
           <div className="relative w-full sm:max-w-sm"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} className="pl-9" placeholder={searchPlaceholder} /></div>

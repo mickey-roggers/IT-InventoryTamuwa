@@ -97,7 +97,7 @@ export default function AssetDetailPage() {
     Paginated<AssetLink> | AssetLink[]
   >(`asset-links/?asset=${id}&page_size=200`, apiFetch);
   const { data: allAssets } = useSWR<Paginated<Asset> | Asset[]>(
-    "assets/?page_size=500",
+    "assets/?page_size=1000",
     apiFetch,
   );
   const { data: requisitions } = useSWR<Paginated<Requisition> | Requisition[]>(
@@ -231,6 +231,13 @@ export default function AssetDetailPage() {
         value: String(item.id),
       })),
     },
+    ...(asset.linked_asset_count > 0 ? [{
+      name: "sync_linked_ownership",
+      label: "Change ownership for all linked assets",
+      type: "checkbox" as const,
+      defaultValue: false,
+      helpText: `Apply the selected person and department to all ${asset.linked_asset_count} connected asset${asset.linked_asset_count === 1 ? "" : "s"}.`,
+    }] : []),
     {
       name: "purchase_date",
       label: "Purchase date",

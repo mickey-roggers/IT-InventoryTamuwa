@@ -1,7 +1,7 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
-from .models import MaintenanceLog, ActionTakenOption
+from .models import MaintenanceLog, MaintenanceWorkEntry, ActionTakenOption
 from assets.models import Asset, Person
 from assets.serializers import PersonSerializer
 from technicians.models import Technician
@@ -114,4 +114,24 @@ class MaintenanceLogSerializer(serializers.ModelSerializer):
                 "issue": "The linked issue belongs to a different asset."
             })
         return attrs
+
+
+class MaintenanceWorkEntrySerializer(serializers.ModelSerializer):
+    recorded_by_username = serializers.CharField(
+        source="recorded_by.username", read_only=True, default=None
+    )
+
+    class Meta:
+        model = MaintenanceWorkEntry
+        fields = [
+            "id",
+            "maintenance_log",
+            "task",
+            "outcome",
+            "performed_at",
+            "recorded_by",
+            "recorded_by_username",
+            "created_at",
+        ]
+        read_only_fields = ["recorded_by", "created_at"]
 

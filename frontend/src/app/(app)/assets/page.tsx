@@ -10,6 +10,7 @@ import { useAuth } from "@/components/providers/auth-provider"
 import { StatusBadge } from "@/components/status-badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Modal } from "@/components/modal"
 import { apiErrorMessage, apiFetch, unpackResults } from "@/lib/api"
 import { assetDisplayName, formatCurrency, formatDate } from "@/lib/format"
 import type { Asset, Category, Department, Paginated, Person, Requisition, StatusOption } from "@/lib/types"
@@ -59,12 +60,107 @@ export default function AssetsPage() {
       { label: "Alias name", render: (item, { refresh }) => <EditableAliasName asset={item} canEdit={canEdit} onSaved={refresh} /> },
       { label: "Category", render: (item) => item.category.name },
       { label: "Serial", render: (item) => <span className="font-mono text-xs">{item.serial_number}</span> },
-      { label: "Assigned to", render: (item) => <div><p>{item.assigned_to?.full_name || "Unassigned"}</p><p className="text-xs text-muted-foreground">{item.department?.name || "No department"}</p></div> },
+      { label: "Assigned to", render: (item, { refresh }) => <EditableAssignee asset={item} people={unpackResults(people)} canEdit={canEdit} onSaved={refresh} /> },
       { label: "Status", render: (item) => <StatusBadge value={item.status.name} /> },
       { label: "Purchased", render: (item) => <div><p>{formatDate(item.purchase_date)}</p><p className="text-xs text-muted-foreground">{formatCurrency(item.purchase_cost)}</p></div> },
       { label: "", className: "w-10", render: (item, { rowHref }) => <Button asChild variant="ghost" size="icon-sm"><Link href={rowHref || `/assets/${item.id}`} aria-label={`Open ${assetDisplayName(item)}`}><ArrowUpRight /></Link></Button> },
     ]}
   />
+}
+
+function EditableAssignee({ asset, people, canEdit, onSaved }: { asset: Asset; people: Person[]; canEdit: boolean; onSaved: () => void }) {
+  const initialValue = asset.assigned_to ? String(asset.assigned_to.id) : "__none__"
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState(initialValue)
+  const [saving, setSaving] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [error, setError] = useState("")
+
+  function cancel() {
+    setValue(initialValue)
+    setError("")
+    setEditing(false)
+    setConfirming(false)
+  }
+
+  async function save(syncLinkedOwnership: boolean) {
+    const selected = people.find((person) => String(person.id) === value)
+    setSaving(true)
+    setError("")
+    try {
+      await apiFetch(`assets/${asset.id}/`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          assigned_to_id: selected?.id ?? null,
+          department_id: selected?.department ?? null,
+          sync_linked_ownership: syncLinkedOwnership,
+        }),
+      })
+      setEditing(false)
+      setConfirming(false)
+      onSaved()
+    } catch (caught) {
+      setError(apiErrorMessage(caught))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function requestSave() {
+    if (value === initialValue) {
+      setEditing(false)
+      return
+    }
+    if (asset.linked_asset_count > 0) setConfirming(true)
+    else void save(false)
+  }
+
+  if (!canEdit) {
+    return <div><p>{asset.assigned_to?.full_name || "Unassigned"}</p><p className="text-xs text-muted-foreground">{asset.department?.name || "No department"}</p></div>
+  }
+
+  return (
+    <div className="min-w-52" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+      {editing ? (
+        <div>
+          <div className="flex items-center gap-1.5">
+            <select
+              autoFocus
+              aria-label={`Assigned person for ${asset.asset_id}`}
+              value={value}
+              disabled={saving}
+              className="h-8 min-w-40 rounded-lg border border-input bg-background px-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
+              onChange={(event) => setValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") { event.preventDefault(); requestSave() }
+                if (event.key === "Escape") { event.preventDefault(); cancel() }
+              }}
+            >
+              <option value="__none__">Unassigned</option>
+              {people.map((person) => <option key={person.id} value={person.id}>{person.full_name}</option>)}
+            </select>
+            <Button type="button" size="icon-sm" disabled={saving} onClick={requestSave} aria-label="Save assignee">{saving ? <Loader2 className="animate-spin" /> : <Check />}</Button>
+            <Button type="button" variant="ghost" size="icon-sm" disabled={saving} onClick={cancel} aria-label="Cancel assignee edit"><X /></Button>
+          </div>
+          {error && <p className="mt-1 max-w-72 text-xs text-destructive">{error}</p>}
+        </div>
+      ) : (
+        <button type="button" className="group -ml-2 rounded-md border border-dashed border-primary/25 bg-primary/5 px-2 py-1 text-left transition-colors hover:border-primary/50 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50" onClick={() => { setError(""); setEditing(true) }} title="Click to change assignment">
+          <span className="flex items-center gap-1.5 text-sm font-medium"><span>{asset.assigned_to?.full_name || "Unassigned"}</span><Pencil className="size-3 text-primary opacity-60 transition-opacity group-hover:opacity-100" /></span>
+          <span className="mt-0.5 block text-xs text-muted-foreground">{asset.department?.name || "No department"}</span>
+        </button>
+      )}
+      <Modal
+        open={confirming}
+        onClose={() => { if (!saving) setConfirming(false) }}
+        title="Change ownership of linked assets?"
+        description={`${assetDisplayName(asset)} is connected to ${asset.linked_asset_count} other asset${asset.linked_asset_count === 1 ? "" : "s"}. Choose whether this ownership change should follow the whole chain.`}
+        footer={<><Button type="button" variant="outline" disabled={saving} onClick={() => setConfirming(false)}>Cancel</Button><Button type="button" variant="outline" disabled={saving} onClick={() => void save(false)}>This asset only</Button><Button type="button" disabled={saving} onClick={() => void save(true)}>{saving && <Loader2 className="animate-spin" />}All linked assets</Button></>}
+      >
+        <p className="text-sm text-muted-foreground">The selected person and their department will be applied. Assignment history will be kept for every changed asset.</p>
+      </Modal>
+    </div>
+  )
 }
 
 function EditableAliasName({ asset, canEdit, onSaved }: { asset: Asset; canEdit: boolean; onSaved: () => void }) {

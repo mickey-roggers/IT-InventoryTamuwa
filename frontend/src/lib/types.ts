@@ -55,6 +55,7 @@ export interface Asset {
   is_deleted: boolean
   created_at: string
   updated_at: string
+  linked_asset_count: number
 }
 
 export interface User {
@@ -115,6 +116,17 @@ export interface MaintenanceLog {
   updated_at: string
 }
 
+export interface MaintenanceWorkEntry {
+  id: number
+  maintenance_log: number
+  task: string
+  outcome: string
+  performed_at: string
+  recorded_by: number | null
+  recorded_by_username: string | null
+  created_at: string
+}
+
 export interface Issue {
   id: number
   title: string
@@ -146,6 +158,7 @@ export interface Project {
   pending_reason: string
   rejected_reason: string
   categories: number[]
+  linked_issue: number | null
   date: string | null
   priority: string
   status: string

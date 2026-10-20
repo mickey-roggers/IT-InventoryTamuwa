@@ -93,6 +93,14 @@ class Project(models.Model):
         related_name='projects',
         help_text='Link asset categories to show available quantities'
     )
+    linked_issue = models.ForeignKey(
+        Issue,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="projects",
+        help_text="Optional issue that led to this project",
+    )
 
     reported_by = models.ForeignKey(
         User, null=True, blank=True, on_delete=models.SET_NULL,

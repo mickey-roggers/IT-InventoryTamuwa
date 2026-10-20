@@ -52,6 +52,10 @@ class AssetSerializer(serializers.ModelSerializer):
         allow_blank=True,
     )
     requisition_item_id = serializers.IntegerField(write_only=True, required=False)
+    sync_linked_ownership = serializers.BooleanField(
+        write_only=True, required=False, default=False
+    )
+    linked_asset_count = serializers.SerializerMethodField()
     category = CategorySerializer(read_only=True)
     category_id = serializers.PrimaryKeyRelatedField(
         queryset=Category.objects.all(), source="category", write_only=True
@@ -112,6 +116,8 @@ class AssetSerializer(serializers.ModelSerializer):
             "requisition",
             "requisition_display",
             "requisition_item_id",
+            "sync_linked_ownership",
+            "linked_asset_count",
             "is_deleted",
             "created_at",
             "updated_at",
@@ -178,6 +184,7 @@ class AssetSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
+        validated_data.pop("sync_linked_ownership", None)
         maintenance_description = validated_data.pop("maintenance_description", "").strip()
         instance = Asset(**validated_data)
         if maintenance_description:
@@ -186,10 +193,19 @@ class AssetSerializer(serializers.ModelSerializer):
         return instance
 
     def update(self, instance, validated_data):
+        instance._sync_linked_ownership = validated_data.pop(
+            "sync_linked_ownership", False
+        )
         maintenance_description = validated_data.pop("maintenance_description", "").strip()
         if maintenance_description:
             instance._maintenance_description = maintenance_description
         return super().update(instance, validated_data)
+
+    def get_linked_asset_count(self, obj):
+        annotated = getattr(obj, "linked_asset_count_value", None)
+        if annotated is not None:
+            return annotated
+        return obj.links_from.filter(linked_asset__is_deleted=False).count()
 
     def validate_purchase_date(self, value):
         if value and (value.year < 1900 or value.year > timezone.now().year + 1):

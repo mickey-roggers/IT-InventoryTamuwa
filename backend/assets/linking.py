@@ -121,6 +121,31 @@ def synchronize_healthy_chain(trigger_asset, *, updated_by=None):
     return []
 
 
+def synchronize_chain_ownership(trigger_asset, *, updated_by=None):
+    """Copy the trigger asset's owner and department across its full link chain.
+
+    Assets are saved individually so assignment history and activity signals remain
+    complete. Blocked assets keep their blocked status while ownership is updated.
+    """
+    chain_ids = get_chain_ids(trigger_asset, include_blocked=True)
+    chain_ids.discard(trigger_asset.pk)
+    changed = []
+    for item in Asset.objects.filter(pk__in=chain_ids, is_deleted=False).select_related(
+        "assigned_to", "department", "status"
+    ):
+        if (
+            item.assigned_to_id == trigger_asset.assigned_to_id
+            and item.department_id == trigger_asset.department_id
+        ):
+            continue
+        item.assigned_to_id = trigger_asset.assigned_to_id
+        item.department_id = trigger_asset.department_id
+        item.updated_by = updated_by
+        item.save()
+        changed.append(item)
+    return changed
+
+
 def pause_linked_chain(unavailable_asset, *, updated_by=None):
     """Move In Use peers to Available when one component becomes unavailable."""
     chain_ids = get_chain_ids(unavailable_asset, include_blocked=True)

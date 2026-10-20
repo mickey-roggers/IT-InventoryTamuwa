@@ -8,15 +8,17 @@ import { ArrowLeft } from "lucide-react";
 import { DetailCard, DetailGrid } from "@/components/detail-card";
 import { PageHeader } from "@/components/page-header";
 import { RecordActions } from "@/components/record-actions";
+import { RelatedCollection } from "@/components/related-collection";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiFetch, unpackResults } from "@/lib/api";
-import { assetDisplayName, assetOptionLabel, formatCurrency, formatDate } from "@/lib/format";
+import { assetDisplayName, assetOptionLabel, formatCurrency, formatDate, toDateTimeLocal } from "@/lib/format";
 import type {
   Asset,
   Issue,
   MaintenanceLog,
+  MaintenanceWorkEntry,
   Paginated,
   Requisition,
   Technician,
@@ -55,6 +57,10 @@ export default function MaintenanceDetailPage() {
   );
   const { data: issues } = useSWR<Paginated<Issue> | Issue[]>(
     "issues/?page_size=200",
+    apiFetch,
+  );
+  const { data: workEntries, mutate: mutateWorkEntries } = useSWR<Paginated<MaintenanceWorkEntry> | MaintenanceWorkEntry[]>(
+    `maintenance-work-entries/?maintenance_log=${id}&page_size=200`,
     apiFetch,
   );
   if (isLoading) return <Skeleton className="h-[32rem]" />;
@@ -184,6 +190,11 @@ export default function MaintenanceDetailPage() {
     },
   ];
   const currentAsset = unpackResults(assets).find((item) => item.asset_id === record.asset);
+  const workEntryFields = (entry?: MaintenanceWorkEntry) => [
+    { name: "task", label: "Task performed", required: true, defaultValue: entry?.task, placeholder: "e.g. Cleaned fan and reseated memory" },
+    { name: "performed_at", label: "Date and time", type: "datetime-local" as const, required: true, defaultValue: toDateTimeLocal(entry?.performed_at || new Date().toISOString()) },
+    { name: "outcome", label: "Outcome / observations", type: "textarea" as const, defaultValue: entry?.outcome, helpText: "Record what changed, what remains unresolved, or the next step." },
+  ];
 
   return (
     <>
@@ -285,6 +296,21 @@ export default function MaintenanceDetailPage() {
             {record.notes || "No notes recorded."}
           </p>
         </DetailCard>
+      </div>
+      <div className="mt-4">
+        <RelatedCollection
+          title="Repair work log"
+          items={unpackResults(workEntries)}
+          endpoint="maintenance-work-entries/"
+          createLabel="Work entry"
+          createValues={{ maintenance_log: Number(id) }}
+          createFields={workEntryFields()}
+          editFields={workEntryFields}
+          render={(entry) => <><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-medium">{entry.task}</p><span className="text-xs text-muted-foreground">{formatDate(entry.performed_at, true)}</span></div>{entry.outcome && <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{entry.outcome}</p>}<p className="mt-2 text-xs text-muted-foreground">Recorded by {entry.recorded_by_username || "System"}</p></>}
+          emptyMessage="No repair tasks have been recorded yet. Add work as it is completed, even while the repair remains open."
+          onChanged={() => mutateWorkEntries()}
+          readOnly={record.maintenance_status === "Closed"}
+        />
       </div>
     </>
   );

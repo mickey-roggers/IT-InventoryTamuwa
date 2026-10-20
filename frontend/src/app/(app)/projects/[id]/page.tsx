@@ -17,6 +17,7 @@ import { assetDisplayName, formatCurrency, formatDate } from "@/lib/format";
 import type {
   Category,
   Comment,
+  Issue,
   Paginated,
   Project,
   ProjectItem,
@@ -38,6 +39,10 @@ export default function ProjectDetailPage() {
   >(`project-comments/?project=${id}&page_size=200`, apiFetch);
   const { data: categories } = useSWR<Paginated<Category> | Category[]>(
     "categories/?page_size=200",
+    apiFetch,
+  );
+  const { data: issues } = useSWR<Paginated<Issue> | Issue[]>(
+    "issues/?page_size=200",
     apiFetch,
   );
   if (isLoading) return <Skeleton className="h-[36rem]" />;
@@ -92,6 +97,14 @@ export default function ProjectDetailPage() {
       })),
     },
     {
+      name: "linked_issue",
+      label: "Issue that led to this project",
+      type: "select" as const,
+      nullable: true,
+      defaultValue: project.linked_issue,
+      options: unpackResults(issues).filter((item) => item.status !== "Closed" || item.id === project.linked_issue).map((item) => ({ label: item.title, value: String(item.id) })),
+    },
+    {
       name: "categories",
       label: "Asset categories",
       type: "multiselect" as const,
@@ -136,6 +149,7 @@ export default function ProjectDetailPage() {
       defaultValue: project.rejected_reason,
     },
   ];
+  const linkedIssue = unpackResults(issues).find((item) => item.id === project.linked_issue);
   const itemFields = (item?: ProjectItem) => [
     {
       name: "item_type",
@@ -224,6 +238,10 @@ export default function ProjectDetailPage() {
                 value: <StatusBadge value={project.status} />,
               },
               { label: "Target date", value: formatDate(project.date) },
+              {
+                label: "Originating issue",
+                value: linkedIssue ? <Link className="text-primary hover:underline" href={`/issues/${linkedIssue.id}`}>{linkedIssue.title}</Link> : "—",
+              },
               { label: "Budget items total", value: formatCurrency(total) },
               {
                 label: "Categories",

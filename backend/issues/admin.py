@@ -36,7 +36,7 @@ class IssueCommentAdmin(admin.ModelAdmin):
 
 @admin.register(Project)
 class ProjectAdmin(admin.ModelAdmin):
-    list_display = ['title', 'priority', 'status', 'date', 'reported_by', 'created_at']
+    list_display = ['title', 'linked_issue', 'priority', 'status', 'date', 'reported_by', 'created_at']
     list_filter = ['priority', 'status', 'created_at']
     search_fields = ['title', 'description', 'problem_statement']
     readonly_fields = ['created_at', 'updated_at', 'reported_by']

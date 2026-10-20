@@ -43,6 +43,7 @@ router.register(r"user-profiles", views.UserProfileViewSet, basename="user-profi
 
 # Maintenance endpoints
 router.register(r"maintenance-logs", views.MaintenanceLogViewSet, basename="maintenance-log")
+router.register(r"maintenance-work-entries", views.MaintenanceWorkEntryViewSet, basename="maintenance-work-entry")
 router.register(r"action-taken-options", views.ActionTakenOptionViewSet, basename="action-taken-option")
 
 # Technicians endpoints

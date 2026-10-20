@@ -1,5 +1,11 @@
 from django.contrib import admin
-from .models import MaintenanceLog, ActionTakenOption
+from .models import MaintenanceLog, MaintenanceWorkEntry, ActionTakenOption
+
+
+class MaintenanceWorkEntryInline(admin.TabularInline):
+    model = MaintenanceWorkEntry
+    extra = 0
+    readonly_fields = ["recorded_by", "created_at"]
 
 
 @admin.register(ActionTakenOption)
@@ -43,3 +49,12 @@ class MaintenanceLogAdmin(admin.ModelAdmin):
         }),
     )
     date_hierarchy = 'date_reported'
+    inlines = [MaintenanceWorkEntryInline]
+
+
+@admin.register(MaintenanceWorkEntry)
+class MaintenanceWorkEntryAdmin(admin.ModelAdmin):
+    list_display = ["maintenance_log", "task", "performed_at", "recorded_by"]
+    list_filter = ["performed_at"]
+    search_fields = ["maintenance_log__asset__asset_id", "task", "outcome"]
+    readonly_fields = ["created_at"]

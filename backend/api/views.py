@@ -33,7 +33,12 @@ from assets.models import (
     AssetLinkHistory,
 )
 from assets.utils import export_assets_excel
-from assets.linking import BLOCKED_LINK_STATUSES, create_bidirectional_link, synchronize_healthy_chain
+from assets.linking import (
+    BLOCKED_LINK_STATUSES,
+    create_bidirectional_link,
+    synchronize_chain_ownership,
+    synchronize_healthy_chain,
+)
 from assets.serializers import (
     AssetSerializer,
     CategorySerializer,
@@ -49,8 +54,12 @@ from users.models import UserProfile
 from users.serializers import UserSerializer, UserAdminSerializer, UserProfileSerializer
 
 # Maintenance API
-from maintenance.models import MaintenanceLog, ActionTakenOption
-from maintenance.serializers import MaintenanceLogSerializer, ActionTakenOptionSerializer
+from maintenance.models import MaintenanceLog, MaintenanceWorkEntry, ActionTakenOption
+from maintenance.serializers import (
+    MaintenanceLogSerializer,
+    MaintenanceWorkEntrySerializer,
+    ActionTakenOptionSerializer,
+)
 
 # Technicians API
 from technicians.models import (
@@ -198,6 +207,12 @@ class AssetViewSet(viewsets.ModelViewSet):
             .select_related(
                 "category", "status", "assigned_to", "department", "last_known_person"
             )
+            .annotate(
+                linked_asset_count_value=Count(
+                    "links_from",
+                    filter=Q(links_from__linked_asset__is_deleted=False),
+                )
+            )
             .all()
         )
 
@@ -260,8 +275,11 @@ class AssetViewSet(viewsets.ModelViewSet):
                 requisition_item.processed_by = self.request.user
                 requisition_item.save(update_fields=["is_processed", "processed_at", "processed_by"])
 
+    @transaction.atomic
     def perform_update(self, serializer):
-        serializer.save(updated_by=self.request.user)
+        asset = serializer.save(updated_by=self.request.user)
+        if getattr(asset, "_sync_linked_ownership", False):
+            synchronize_chain_ownership(asset, updated_by=self.request.user)
 
     def perform_destroy(self, instance):
         instance.is_deleted = True
@@ -602,6 +620,22 @@ class MaintenanceLogViewSet(viewsets.ModelViewSet):
         asset_status = StatusOption.objects.filter(name=status_name).first()
         if asset_status:
             Asset.objects.filter(pk=log.asset_id).update(status=asset_status)
+
+
+class MaintenanceWorkEntryViewSet(viewsets.ModelViewSet):
+    serializer_class = MaintenanceWorkEntrySerializer
+    permission_classes = [IsAdminOrReadOnly]
+    queryset = MaintenanceWorkEntry.objects.select_related(
+        "maintenance_log", "maintenance_log__asset", "recorded_by"
+    ).order_by("-performed_at", "-id")
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        maintenance_log = self.request.query_params.get("maintenance_log")
+        return qs.filter(maintenance_log_id=maintenance_log) if maintenance_log else qs
+
+    def perform_create(self, serializer):
+        serializer.save(recorded_by=self.request.user)
 
 
 class TechnicianViewSet(viewsets.ModelViewSet):
@@ -1060,6 +1094,13 @@ class ProjectSerializer(serializers.ModelSerializer):
         rejected_reason = attrs.get("rejected_reason", getattr(self.instance, "rejected_reason", ""))
         if status_value == "Rejected" and not rejected_reason:
             raise serializers.ValidationError({"rejected_reason": "A reason is required when rejecting a project."})
+        linked_issue = attrs.get("linked_issue", getattr(self.instance, "linked_issue", None))
+        if (
+            linked_issue
+            and linked_issue.status == "Closed"
+            and (not self.instance or linked_issue.pk != self.instance.linked_issue_id)
+        ):
+            raise serializers.ValidationError({"linked_issue": "Closed issues cannot be linked to a project."})
         return attrs
 
     def get_category_availability(self, obj):
@@ -1096,7 +1137,7 @@ class ProjectCommentSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class ProjectViewSet(viewsets.ModelViewSet):
-    queryset = Project.objects.select_related('reported_by').order_by('-created_at')
+    queryset = Project.objects.select_related('reported_by', 'linked_issue').order_by('-created_at')
     serializer_class = ProjectSerializer
     permission_classes = [IsAdminOrReadOnly]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
@@ -1424,4 +1465,6 @@ class AssetLinkHistoryViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(Q(asset_id=asset) | Q(linked_asset_id=asset))
         if self.request.query_params.get("recent") == "true":
             qs = qs.filter(unlinked_at__gte=timezone.now() - timedelta(days=30))
+        if self.request.query_params.get("needs_attention") == "true":
+            qs = qs.filter(attention_required=True, attention_resolved_at__isnull=True)
         return qs

@@ -110,7 +110,7 @@ export default function UnapprovedItemsPage() {
                                 onClick={() => approve(item)}
                               >
                                 <Check />
-                                Approve
+                                Restore
                               </Button>
                             )}
                             <Button asChild variant="ghost" size="icon-sm">

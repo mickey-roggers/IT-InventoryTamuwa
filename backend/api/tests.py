@@ -2,7 +2,9 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from assets.models import Asset, AssetLink, Category, Department, StatusOption
+from assets.models import Asset, AssetLink, AssignmentHistory, Category, Department, Person, StatusOption
+from issues.models import Issue, Project
+from maintenance.models import MaintenanceLog, MaintenanceWorkEntry
 from requisition.models import Requisition, RequisitionItem
 from technicians.models import Technician
 from users.models import UserProfile
@@ -248,3 +250,94 @@ class ExtendedApiTests(TestCase):
         item.refresh_from_db()
         self.assertEqual(item.quantity, 1)
         self.assertFalse(item.is_processed)
+
+    def test_asset_ownership_can_be_copied_to_the_full_linked_chain(self):
+        category = Category.objects.create(name="Linked laptop", short_code="LLP")
+        available = StatusOption.objects.create(name="Available")
+        StatusOption.objects.create(name="In Use")
+        person = Person.objects.create(first_name="Amina", last_name="Otieno", department=self.department)
+        assets = [
+            Asset.objects.create(
+                asset_id=f"LLP-00{index}", category=category,
+                model_description=f"Linked laptop {index}", serial_number=f"LLP-SER-{index}",
+                status=available, created_by=self.admin, updated_by=self.admin,
+            )
+            for index in range(1, 3)
+        ]
+        AssetLink.objects.create(asset=assets[0], linked_asset=assets[1], created_by=self.admin)
+        AssetLink.objects.create(asset=assets[1], linked_asset=assets[0], created_by=self.admin)
+        self.client.force_authenticate(self.admin)
+
+        response = self.client.patch(
+            f"/api/assets/{assets[0].pk}/",
+            {
+                "assigned_to_id": person.pk,
+                "department_id": self.department.pk,
+                "sync_linked_ownership": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        for asset in assets:
+            asset.refresh_from_db()
+            self.assertEqual(asset.assigned_to, person)
+            self.assertEqual(asset.department, self.department)
+            self.assertEqual(asset.status.name, "In Use")
+            self.assertTrue(AssignmentHistory.objects.filter(asset=asset, person=person).exists())
+
+    def test_requisition_creation_accepts_multiple_items(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(
+            "/api/requisitions/",
+            {
+                "req_no": "REQ-MULTI",
+                "company": "Tamuwa",
+                "title": "New workstations",
+                "status": "Pending",
+                "items": [
+                    {"item_type": "Asset", "item_name": "Laptop", "unit_price": "70000", "quantity": 2, "is_approved": True},
+                    {"item_type": "Asset", "item_name": "Mouse", "unit_price": "1500", "quantity": 2, "is_approved": True},
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(Requisition.objects.get(pk=response.data["id"]).items.count(), 2)
+
+    def test_maintenance_work_entries_keep_partial_repair_history(self):
+        category = Category.objects.create(name="Repair device", short_code="RPD")
+        available = StatusOption.objects.create(name="Available")
+        asset = Asset.objects.create(
+            asset_id="RPD-001", category=category, model_description="Repair device",
+            serial_number="RPD-SER-1", status=available,
+            created_by=self.admin, updated_by=self.admin,
+        )
+        maintenance = MaintenanceLog.objects.create(
+            asset=asset, date_reported="2026-10-20", description="Intermittent boot issue",
+            maintenance_status="Open", reported_by=self.admin,
+        )
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(
+            "/api/maintenance-work-entries/",
+            {"maintenance_log": maintenance.pk, "task": "Reseated memory", "outcome": "Booted once; monitoring continues."},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        entry = MaintenanceWorkEntry.objects.get(pk=response.data["id"])
+        self.assertEqual(entry.recorded_by, self.admin)
+        self.assertEqual(maintenance.work_entries.count(), 1)
+        maintenance.refresh_from_db()
+        self.assertEqual(maintenance.maintenance_status, "Open")
+
+    def test_project_can_optionally_link_to_an_open_issue(self):
+        issue = Issue.objects.create(title="Repeated network drops", reported_by=self.admin)
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(
+            "/api/projects/",
+            {"title": "Replace core switch", "priority": "High", "status": "Pending", "linked_issue": issue.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        project = Project.objects.get(pk=response.data["id"])
+        self.assertEqual(project.linked_issue, issue)

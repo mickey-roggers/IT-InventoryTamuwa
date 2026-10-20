@@ -101,3 +101,36 @@ class MaintenanceLog(models.Model):
 
     def __str__(self):
         return f"Maintenance for {self.asset.asset_id} - {self.maintenance_status}"
+
+
+class MaintenanceWorkEntry(models.Model):
+    """A dated piece of work completed during an ongoing repair."""
+
+    maintenance_log = models.ForeignKey(
+        MaintenanceLog,
+        on_delete=models.CASCADE,
+        related_name="work_entries",
+    )
+    task = models.CharField(max_length=255, verbose_name="Task performed")
+    outcome = models.TextField(blank=True)
+    performed_at = models.DateTimeField(default=timezone.now)
+    recorded_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="maintenance_work_entries",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-performed_at", "-id"]
+        indexes = [
+            models.Index(
+                fields=["maintenance_log", "performed_at"],
+                name="maintenance_mainten_071a51_idx",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.maintenance_log.asset.asset_id}: {self.task}"
