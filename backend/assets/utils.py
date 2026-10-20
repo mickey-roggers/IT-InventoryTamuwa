@@ -52,7 +52,7 @@ def export_assets_excel(assets):
     3. MAINTENANCE LOG  – DB records + live formula section for Under-Maintenance assets
     4. LISTS            – master dropdown source (Category / Status / Action Taken)
     5. Past Users       – assignment history
-    6. README           – setup instructions including VBA macro for auto-status
+    6. README           – macro-free workbook instructions
 
     Interconnections
     ----------------
@@ -60,9 +60,10 @@ def export_assets_excel(assets):
     • LISTS col B → Status dropdown (Asset Inventory col H)
     • LISTS col C → Action Taken dropdown (Maintenance Log col E)
     • QUANTITIES re-counts live; new LISTS rows auto-appear as new quantity rows
-    • MAINTENANCE LOG auto-shows assets currently "Under Maintenance"
+    • MAINTENANCE LOG includes a download-time snapshot of assets under maintenance
     • Duplicate Asset ID blocked (COUNTIF stop validation)
     • Duplicate Serial Number per Category blocked (COUNTIFS stop validation)
+    • Current Status derives from Assigned To, with an optional Status Override
     • Status colour-coding via conditional formatting
     """
     wb = Workbook()
@@ -124,24 +125,50 @@ def export_assets_excel(assets):
     ws_inv = wb.create_sheet("ASSET Inventory", 1)
     ws_inv.append([
         'Asset_ID', 'Category', 'Model / Description', 'Purchase Date',
-        'Serial Number', 'Assigned To', 'Last Known User', 'Current Status', 'Admin Comments', 'Alias Name'
+        'Serial Number', 'Assigned To', 'Last Known User', 'Current Status',
+        'Admin Comments', 'Alias Name', 'Status Override'
     ])
     style_header_row(ws_inv)
 
     # Fill existing DB data
-    for asset in assets:
+    for row_number, asset in enumerate(assets, start=2):
+        assigned_to = (
+            asset.assigned_to.full_name
+            if asset.assigned_to
+            else (asset.department.name + ' (Dept)' if asset.department else '')
+        )
+        automatic_status = 'In Use' if assigned_to else 'Available'
+        current_status = asset.status.name if asset.status else ''
+        status_override = (
+            current_status
+            if current_status and current_status != automatic_status
+            else ''
+        )
         ws_inv.append([
             asset.asset_id,
             asset.category.name if asset.category else '',
             asset.model_description,
             asset.purchase_date.strftime('%d/%m/%Y') if asset.purchase_date else '',
             asset.serial_number,
-            asset.assigned_to.full_name if asset.assigned_to else (asset.department.name + ' (Dept)' if asset.department else ''),
+            assigned_to,
             asset.last_known_person.full_name if asset.last_known_person else '',
-            asset.status.name if asset.status else '',
+            (
+                f'=IF(COUNTA($A{row_number}:$G{row_number},$I{row_number}:$K{row_number})=0,"",'
+                f'IF($K{row_number}<>"",$K{row_number},'
+                f'IF(TRIM($F{row_number})<>"","In Use","Available")))'
+            ),
             asset.admin_comments,
             asset.alias_name,
+            status_override,
         ])
+
+    # Keep automatic status available for new rows without requiring a macro.
+    for row_number in range(ws_inv.max_row + 1, INV_MAX + 1):
+        ws_inv.cell(row=row_number, column=8).value = (
+            f'=IF(COUNTA($A{row_number}:$G{row_number},$I{row_number}:$K{row_number})=0,"",'
+            f'IF($K{row_number}<>"",$K{row_number},'
+            f'IF(TRIM($F{row_number})<>"","In Use","Available")))'
+        )
 
     # --- Dropdown: Category (col B) → LISTS!A2:A500 ---
     dv_cat = DataValidation(
@@ -153,7 +180,7 @@ def export_assets_excel(assets):
     ws_inv.add_data_validation(dv_cat)
     dv_cat.add(f'B2:B{INV_MAX}')
 
-    # --- Dropdown: Status (col H) → LISTS!B2:B500 ---
+    # --- Dropdown: Status Override (col K) → LISTS!B2:B500 ---
     dv_status = DataValidation(
         type="list", formula1=f"LISTS!$B$2:$B${LISTS_MAX}",
         allow_blank=True, showErrorMessage=True,
@@ -161,7 +188,7 @@ def export_assets_excel(assets):
         errorTitle="Invalid Status",
     )
     ws_inv.add_data_validation(dv_status)
-    dv_status.add(f'H2:H{INV_MAX}')
+    dv_status.add(f'K2:K{INV_MAX}')
 
     # --- No duplicate Asset IDs (col A) ---
     dv_assetid = DataValidation(
@@ -203,7 +230,7 @@ def export_assets_excel(assets):
 
     # --- Alternating row shading ---
     ws_inv.conditional_formatting.add(
-        f'A2:J{INV_MAX}',
+        f'A2:K{INV_MAX}',
         FormulaRule(
             formula=['=MOD(ROW(),2)=0'],
             fill=PatternFill(start_color="EBF1F7", end_color="EBF1F7", fill_type="solid"),
@@ -211,15 +238,21 @@ def export_assets_excel(assets):
     )
 
     # Column widths & freeze
-    for col, width in zip('ABCDEFGHIJ', [15, 20, 32, 14, 20, 22, 22, 20, 40, 24]):
+    for col, width in zip('ABCDEFGHIJK', [15, 20, 32, 14, 20, 22, 22, 20, 40, 24, 20]):
         ws_inv.column_dimensions[col].width = width
     ws_inv.freeze_panes = 'A2'
+    ws_inv.auto_filter.ref = f'A1:K{INV_MAX}'
 
     ws_inv['F1'].comment = Comment(
-        "AUTO-STATUS: When you fill 'Assigned To' (this column), add a VBA macro\n"
-        "(see the README sheet) to automatically set 'Current Status' to 'In Use'.\n\n"
-        "MAINTENANCE: Any row you set to 'Under Maintenance' automatically appears\n"
-        "in the live section of the MAINTENANCE LOG sheet.",
+        "AUTO-STATUS: Fill 'Assigned To' and Current Status becomes 'In Use' automatically.\n"
+        "No macro or setup is required. Clear Assigned To and it becomes 'Available'.\n\n"
+        "For Under Maintenance, Missing, Retired, or another exception, select a value\n"
+        "in the Status Override column. Clear the override to return to automatic status.",
+        "System"
+    )
+    ws_inv['K1'].comment = Comment(
+        "Optional. Select a status here only when it should take priority over the\n"
+        "automatic Assigned To status. Clear it to return to automatic status.",
         "System"
     )
 
@@ -378,7 +411,7 @@ def export_assets_excel(assets):
     ws_past.freeze_panes = 'A2'
 
     # ══════════════════════════════════════════════════════════════════════════
-    # SHEET 6: README – instructions + VBA macro code
+    # SHEET 6: README – macro-free workbook instructions
     # ══════════════════════════════════════════════════════════════════════════
     ws_readme = wb.create_sheet("📋 README", 5)
     ws_readme.column_dimensions['A'].width = 95
@@ -387,40 +420,22 @@ def export_assets_excel(assets):
         ("IT Asset Inventory – Excel Export Guide", True, 14, "366092"),
         ("", False, 11, None),
         ("WHAT IS AUTOMATIC (no setup needed)", True, 11, None),
-        ("  • Category / Status / Action Taken dropdowns are linked to the LISTS sheet.", False, 11, None),
+        ("  • Category / Status Override / Action Taken dropdowns use the LISTS sheet.", False, 11, None),
         ("  • Add a new Category in LISTS col A → it instantly appears in the Asset Inventory", False, 11, None),
         ("    Category dropdown AND shows as a new row in QUANTITIES.", False, 11, None),
+        ("  • Current Status changes to 'In Use' when Assigned To is filled, or", False, 11, None),
+        ("    'Available' when Assigned To is blank. No macro or setup is required.", False, 11, None),
+        ("  • Use Status Override for Under Maintenance, Missing, Retired, or exceptions.", False, 11, None),
+        ("    Clear Status Override to return Current Status to automatic mode.", False, 11, None),
         ("  • QUANTITIES counts update live when you edit the Asset Inventory sheet.", False, 11, None),
-        ("  • MAINTENANCE LOG bottom section auto-lists every asset with status", False, 11, None),
-        ('    "Under Maintenance" from the Asset Inventory sheet (press F9 to refresh).', False, 11, None),
+        ("  • MAINTENANCE LOG includes current database records plus a snapshot of assets", False, 11, None),
+        ('    that were "Under Maintenance" when the workbook was downloaded.', False, 11, None),
         ("", False, 11, None),
         ("VALIDATION RULES (enforced by Excel stop errors)", True, 11, None),
         ("  • Duplicate Asset_ID (col A) → Excel will block the entry.", False, 11, None),
         ("  • Duplicate Serial Number within the same Category (col E, keyed on col B)", False, 11, None),
         ("    → Excel will block the entry.", False, 11, None),
-        ("  • Status and Category must come from the LISTS sheet.", False, 11, None),
-        ("", False, 11, None),
-        ("AUTO-STATUS MACRO (one-time 2-minute setup)", True, 11, "FF0000"),
-        ("This makes Status auto-change to 'In Use' when you fill the 'Assigned To' column.", False, 11, None),
-        ("", False, 11, None),
-        ("  Step 1: Press Alt+F11 to open the VBA editor.", False, 11, None),
-        ("  Step 2: In the left panel, expand VBAProject → Microsoft Excel Objects.", False, 11, None),
-        ("  Step 3: Double-click the sheet named 'ASSET Inventory'.", False, 11, None),
-        ("  Step 4: Paste the code below into the code window:", False, 11, None),
-        ("", False, 11, None),
-        ("     Private Sub Worksheet_Change(ByVal Target As Range)", False, 11, None),
-        ("         ' Col F = Assigned To,  Col H = Current Status", False, 11, None),
-        ("         If Target.Column = 6 And Target.Row > 1 Then", False, 11, None),
-        ("             Application.EnableEvents = False", False, 11, None),
-        ("             If Trim(Target.Value) <> \"\" Then", False, 11, None),
-        ("                 Cells(Target.Row, 8).Value = \"In Use\"", False, 11, None),
-        ("             End If", False, 11, None),
-        ("             Application.EnableEvents = True", False, 11, None),
-        ("         End If", False, 11, None),
-        ("     End Sub", False, 11, None),
-        ("", False, 11, None),
-        ("  Step 5: Close the VBA editor (Alt+Q).", False, 11, None),
-        ('  Step 6: Save the file as "Excel Macro-Enabled Workbook (*.xlsm)".', False, 11, None),
+        ("  • Category and Status Override must come from the LISTS sheet.", False, 11, None),
         ("", False, 11, None),
         ("TIPS", True, 11, None),
         ("  • Press F9 to force-recalculate all formulas.", False, 11, None),
@@ -437,6 +452,11 @@ def export_assets_excel(assets):
         if colour:
             f = Font(bold=bold, size=size, color=colour)
         ws_readme.cell(row=row, column=1).font = f
+
+    # Ensure formula-based status and quantity fields recalculate when opened.
+    wb.calculation.calcMode = "auto"
+    wb.calculation.fullCalcOnLoad = True
+    wb.calculation.forceFullCalc = True
 
     # ── HTTP response ──────────────────────────────────────────────────────────
     response = HttpResponse(

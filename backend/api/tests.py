@@ -1,5 +1,9 @@
+from io import BytesIO
+from zipfile import ZipFile
+
 from django.contrib.auth.models import User
 from django.test import TestCase
+from openpyxl import load_workbook
 from rest_framework.test import APIClient
 
 from assets.models import Asset, AssetLink, AssignmentHistory, Category, Department, Person, StatusOption
@@ -105,12 +109,23 @@ class ExtendedApiTests(TestCase):
     def test_asset_excel_export_returns_downloadable_workbook(self):
         category = Category.objects.create(name="Laptop", short_code="LAP")
         available = StatusOption.objects.create(name="Available")
+        missing = StatusOption.objects.create(name="Missing")
         Asset.objects.create(
             asset_id="LAP-001",
             category=category,
             model_description="Export laptop",
             serial_number="EXPORT-SER-001",
             status=available,
+            created_by=self.admin,
+            updated_by=self.admin,
+        )
+        Asset.objects.create(
+            asset_id="LAP-002",
+            category=category,
+            model_description="Missing assigned laptop",
+            serial_number="EXPORT-SER-002",
+            status=missing,
+            department=self.department,
             created_by=self.admin,
             updated_by=self.admin,
         )
@@ -128,6 +143,41 @@ class ExtendedApiTests(TestCase):
             'attachment; filename="IT_Inventory_Export.xlsx"',
         )
         self.assertTrue(response.content.startswith(b"PK"))
+
+        workbook = load_workbook(BytesIO(response.content), data_only=False)
+        inventory = workbook["ASSET Inventory"]
+        readme_text = "\n".join(
+            str(cell.value or "") for cell in workbook["📋 README"]["A"]
+        )
+
+        self.assertEqual(inventory["H1"].value, "Current Status")
+        self.assertEqual(inventory["K1"].value, "Status Override")
+        asset_rows = {
+            inventory.cell(row=row, column=1).value: row
+            for row in range(2, 4)
+        }
+        available_row = asset_rows["LAP-001"]
+        missing_row = asset_rows["LAP-002"]
+        self.assertIn(
+            f'IF(TRIM($F{available_row})<>"","In Use","Available")',
+            inventory.cell(row=available_row, column=8).value,
+        )
+        self.assertIn(inventory.cell(row=available_row, column=11).value, (None, ""))
+        self.assertEqual(inventory.cell(row=missing_row, column=11).value, "Missing")
+        self.assertTrue(
+            any(
+                validation.formula1 == "LISTS!$B$2:$B$500"
+                and "K2:K2000" in str(validation.sqref)
+                for validation in inventory.data_validations.dataValidation
+            )
+        )
+        self.assertEqual(workbook.calculation.calcMode, "auto")
+        self.assertNotIn("ALT+F11", readme_text.upper())
+        self.assertNotIn("PRIVATE SUB", readme_text.upper())
+        self.assertNotIn("MACRO-ENABLED", readme_text.upper())
+
+        with ZipFile(BytesIO(response.content)) as archive:
+            self.assertNotIn("xl/vbaProject.bin", archive.namelist())
 
     def test_bought_queue_processing_links_assets_and_tracks_quantity(self):
         category = Category.objects.create(name="Monitor", short_code="MON")
