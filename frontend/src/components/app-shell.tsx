@@ -31,9 +31,9 @@ import {
 } from "lucide-react"
 
 import { useAuth } from "@/components/providers/auth-provider"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Avatar, AvatarFallback } from "@/components/tailwind/avatar"
+import { Badge } from "@/components/tailwind/badge"
+import { Button } from "@/components/tailwind/button"
 import { apiFetch } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
@@ -169,7 +169,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </details>
           </div>
         </header>
-        <main className="mx-auto max-w-[1600px] p-4 sm:p-6 lg:p-8">{children}</main>
+        <main className="w-full min-w-0 p-4 sm:p-6 lg:p-8 xl:p-10">{children}</main>
       </div>
     </div>
   )

@@ -22,10 +22,10 @@ import {
   RecordActions,
 } from "@/components/record-actions";
 import { StatusBadge } from "@/components/status-badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/tailwind/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/tailwind/card";
+import { Separator } from "@/components/tailwind/separator";
+import { Skeleton } from "@/components/tailwind/skeleton";
 import { apiFetch, unpackResults } from "@/lib/api";
 import { assetDisplayName, assetOptionLabel, formatCurrency, formatDate, toDateTimeLocal } from "@/lib/format";
 import type {

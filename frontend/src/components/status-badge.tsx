@@ -1,4 +1,4 @@
-import { Badge } from "@/components/ui/badge"
+import { Badge } from "@/components/tailwind/badge"
 import { cn } from "@/lib/utils"
 
 const tones: Record<string, string> = {

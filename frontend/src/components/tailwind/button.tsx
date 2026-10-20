@@ -45,7 +45,7 @@ function Button({ className, variant = "default", size = "default", asChild = fa
     return React.cloneElement(child, { ...props, className: cn(classes, child.props.className) })
   }
 
-  return <button data-slot="button" data-variant={variant} data-size={size} className={classes} {...props}>{children}</button>
+  return <button className={classes} {...props}>{children}</button>
 }
 
 export { Button }

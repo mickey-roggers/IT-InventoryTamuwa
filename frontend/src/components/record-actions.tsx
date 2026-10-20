@@ -7,7 +7,7 @@ import { Loader2, Pencil, Trash2 } from "lucide-react"
 import { FormField, ResourceFormDialog } from "@/components/create-resource-dialog"
 import { Modal } from "@/components/modal"
 import { useAuth } from "@/components/providers/auth-provider"
-import { Button } from "@/components/ui/button"
+import { Button } from "@/components/tailwind/button"
 import { apiErrorMessage, apiFetch } from "@/lib/api"
 
 export function RecordActions({ endpoint, backHref, label, fields, onChanged, adminOnly = false, canEdit = true, canDelete = true }: { endpoint: string; backHref: string; label: string; fields: FormField[]; onChanged: () => void; adminOnly?: boolean; canEdit?: boolean; canDelete?: boolean }) {

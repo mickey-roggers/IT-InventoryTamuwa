@@ -9,8 +9,8 @@ import { DetailCard, DetailGrid } from "@/components/detail-card";
 import { PageHeader } from "@/components/page-header";
 import { RecordActions } from "@/components/record-actions";
 import { StatusBadge } from "@/components/status-badge";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/tailwind/button";
+import { Skeleton } from "@/components/tailwind/skeleton";
 import {
   Table,
   TableBody,
@@ -18,7 +18,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
+} from "@/components/tailwind/table";
 import { apiFetch, unpackResults } from "@/lib/api";
 import { assetDisplayName } from "@/lib/format";
 import type { Asset, Department, Paginated, Person } from "@/lib/types";

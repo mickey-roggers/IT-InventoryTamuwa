@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/tailwind/card"
 
 export function DetailCard({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
   return <Card className="border-border/70 shadow-sm"><CardHeader className="flex-row items-center justify-between"><CardTitle className="text-base">{title}</CardTitle>{action}</CardHeader><CardContent>{children}</CardContent></Card>

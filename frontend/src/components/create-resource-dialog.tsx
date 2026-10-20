@@ -3,10 +3,10 @@
 import { FormEvent, ReactElement, ReactNode, cloneElement, useCallback, useState } from "react"
 import { Loader2, Pencil, Plus } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
+import { Button } from "@/components/tailwind/button"
+import { Input } from "@/components/tailwind/input"
+import { Label } from "@/components/tailwind/label"
+import { Textarea } from "@/components/tailwind/textarea"
 import { Modal } from "@/components/modal"
 import { apiErrorMessage, apiFetch } from "@/lib/api"
 
@@ -87,7 +87,7 @@ export function ResourceFormDialog({ title, description, endpoint, fields, onSav
       {trigger
         ? cloneElement(trigger as ReactElement<{ onClick?: () => void }>, { onClick: () => { setError(""); setOpen(true) } })
         : <Button onClick={() => { setError(""); setOpen(true) }}>{method === "POST" ? <Plus /> : <Pencil />}{buttonLabel || (method === "POST" ? `Add ${title}` : `Edit ${title}`)}</Button>}
-      <Modal open={open} onClose={close} title={title} description={description} className="sm:max-w-2xl">
+      <Modal open={open} onClose={close} title={title} description={description} className="sm:max-w-4xl">
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             {fields.map((field) => {

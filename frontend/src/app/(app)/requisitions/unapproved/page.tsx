@@ -6,9 +6,9 @@ import { Check, ExternalLink } from "lucide-react";
 
 import { PageHeader } from "@/components/page-header";
 import { useAuth } from "@/components/providers/auth-provider";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/tailwind/button";
+import { Card, CardContent } from "@/components/tailwind/card";
+import { Skeleton } from "@/components/tailwind/skeleton";
 import {
   Table,
   TableBody,
@@ -16,7 +16,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
+} from "@/components/tailwind/table";
 import { apiFetch, unpackResults } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import type { Paginated, Requisition, RequisitionItem } from "@/lib/types";

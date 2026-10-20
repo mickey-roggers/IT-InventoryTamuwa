@@ -18,7 +18,7 @@ export function badgeVariants({ variant = "default", className }: { variant?: Ba
 }
 
 function Badge({ className, variant = "default", children, ...props }: React.ComponentProps<"span"> & { variant?: BadgeVariant }) {
-  return <span data-slot="badge" data-variant={variant} className={badgeVariants({ variant, className })} {...props}>{children}</span>
+  return <span className={badgeVariants({ variant, className })} {...props}>{children}</span>
 }
 
 export { Badge }

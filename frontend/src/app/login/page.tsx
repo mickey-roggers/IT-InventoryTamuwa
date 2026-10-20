@@ -4,10 +4,10 @@ import { FormEvent, useState } from "react"
 import { useRouter } from "next/navigation"
 import { ArrowRight, Boxes, CheckCircle2, Loader2, ShieldCheck } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import { Button } from "@/components/tailwind/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/tailwind/card"
+import { Input } from "@/components/tailwind/input"
+import { Label } from "@/components/tailwind/label"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -57,7 +57,7 @@ export default function LoginPage() {
       </section>
       <section className="flex items-center justify-center p-5 sm:p-10">
         <Card className="w-full max-w-md border-border/70 shadow-xl shadow-slate-900/5">
-          <CardHeader className="space-y-4 pb-2">
+          <CardHeader className="space-y-4 px-5 pb-2 pt-5">
             <span className="grid size-11 place-items-center rounded-xl bg-primary/10 text-primary lg:hidden"><Boxes /></span>
             <div><CardTitle className="text-2xl tracking-tight">Welcome back</CardTitle><CardDescription className="mt-2">Sign in with your inventory account.</CardDescription></div>
           </CardHeader>

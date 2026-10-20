@@ -10,12 +10,12 @@ import { PageHeader } from "@/components/page-header";
 import { useAuth } from "@/components/providers/auth-provider";
 import { DeleteResourceButton } from "@/components/record-actions";
 import { StatusBadge } from "@/components/status-badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/tailwind/button";
+import { Card, CardContent } from "@/components/tailwind/card";
+import { Input } from "@/components/tailwind/input";
+import { Label } from "@/components/tailwind/label";
+import { Skeleton } from "@/components/tailwind/skeleton";
+import { Textarea } from "@/components/tailwind/textarea";
 import {
   Table,
   TableBody,
@@ -23,7 +23,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
+} from "@/components/tailwind/table";
 import { apiErrorMessage, apiFetch, unpackResults } from "@/lib/api";
 import { assetDisplayName, assetOptionLabel, formatDate } from "@/lib/format";
 import type {

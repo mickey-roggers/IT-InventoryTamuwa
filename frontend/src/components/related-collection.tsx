@@ -5,8 +5,8 @@ import { Pencil } from "lucide-react"
 import { FormField, ResourceFormDialog } from "@/components/create-resource-dialog"
 import { DeleteResourceButton } from "@/components/record-actions"
 import { useAuth } from "@/components/providers/auth-provider"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/tailwind/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/tailwind/card"
 
 export function RelatedCollection<T extends { id: number }>({ title, items, endpoint, createLabel, createFields, createValues, editFields, render, emptyMessage, onChanged, readOnly = false }: { title: string; items: T[]; endpoint: string; createLabel: string; createFields: FormField[]; createValues?: Record<string, unknown>; editFields?: (item: T) => FormField[]; render: (item: T) => React.ReactNode; emptyMessage: string; onChanged: () => void; readOnly?: boolean }) {
   const { user } = useAuth()
